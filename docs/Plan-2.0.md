@@ -1,6 +1,6 @@
 # SolTechnology.DateTimeZone 2.0 – plan
 
-Status: 18 Oct 2026. Package `SolTechnology.DateTimeZone` 1.0.1 (~100 downloads), repository under `AdrianStrugala`, project named `SolTechnology.Time`, net6.0. The package promise: **a point in time and its representations in time zones, with no "local time" of unknown zone**. The package name stays `SolTechnology.DateTimeZone`; project name and namespace must match it.
+Status: 26 Oct 2026. Package `SolTechnology.DateTimeZone` 1.0.1 (~100 downloads), repository moving from `AdrianStrugala` to `Sol-Technology`, project named `SolTechnology.Time`, net6.0. The package promise: **a point in time and its representations in time zones, with no "local time" of unknown zone**. The package name stays `SolTechnology.DateTimeZone`; project name and namespace must match it.
 
 MIT, free. Role in the SolTechnology family: the shared time model for AvroConvert 4.x (`timestamp-*` / `local-timestamp-*`, item S7 in `V4ReleasePlan.md`) and for Lake (Parquet `isAdjustedToUTC`, Iceberg `timestamp` vs `timestamptz`, Arrow `timestamp[tz]`).
 
@@ -46,9 +46,9 @@ Out of scope for 2.0: non-ISO calendars, `Period`/`Duration`, bundled tzdb, Rosl
 
 ### 0. Transfer the repository to the organisation (first, so CI and the package point at the right place)
 - [ ] GitHub: `AdrianStrugala/SolTechnology.DateTimeZone` → Settings → General → **Transfer ownership** → `Sol-Technology`. GitHub keeps a redirect from the old address.
-- [ ] Locally: `git remote set-url origin https://github.com/Sol-Technology/SolTechnology.DateTimeZone.git`.
-- [ ] Re-create the `NUGET_API_KEY` secret in the new repository (secrets do not survive a transfer). Same NuGet key as AvroConvert, push scope limited to `SolTechnology.*`.
-- [ ] `RepositoryUrl`, `PackageProjectUrl`, README badges to the new address.
+- [x] Locally: `git remote set-url origin https://github.com/Sol-Technology/SolTechnology.DateTimeZone.git`.
+- [ ] Publishing: no API key. nuget.org **Trusted Publishing** as in AvroConvert (`publish.yml` on `v*` tags, environment `nuget`, repo variable `NUGET_USER`); policy owner `Sol-Technology`, repository `SolTechnology.DateTimeZone`, workflow `publish.yml`. Set up together with the new CI in step 1. Secrets do not survive a transfer, so the old `NUGET_API_KEY` is gone anyway.
+- [x] `RepositoryUrl`, `PackageProjectUrl`, README badges to the new address.
 - [ ] NuGet: add a co-owner if the organisation has its own account; otherwise the owner stays `AdrianStrugala` (as for AvroConvert).
 
 ### 1. Project housekeeping

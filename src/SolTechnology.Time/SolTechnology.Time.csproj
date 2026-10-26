@@ -14,7 +14,9 @@
 		<Product>SolTechnology.DateTimeZone</Product>
 		<PackageId>SolTechnology.DateTimeZone</PackageId>
 		<AssemblyName>SolTechnology.DateTimeZone</AssemblyName>
-		<RepositoryUrl>https://github.com/AdrianStrugala/SolTechnology.DateTimeZone</RepositoryUrl>
+		<RepositoryUrl>https://github.com/Sol-Technology/SolTechnology.DateTimeZone</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageProjectUrl>https://github.com/Sol-Technology/SolTechnology.DateTimeZone</PackageProjectUrl>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
 		<PackageIcon>docs\mini-logo.png</PackageIcon>
