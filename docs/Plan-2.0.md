@@ -129,3 +129,56 @@ Lake does not pass its go/no-go in Q1 2027. AvroConvert never takes the dependen
 ### Kill criteria
 - Lake no-go and no AvroConvert issue about zones by the time preview.1 is ready → ship preview.1 as is, no further work.
 - More than 8 evenings spent before preview.1 → stop, cut scope to `UnzonedDateTime` + instant-based core.
+
+## Design review: what will break in the new code (26 Oct 2026)
+
+"Checked" = run on .NET 10.0.100, macOS, system tzdata, 26 Oct 2026. Windows was not checked; every Windows point below is a test to add to the CI matrix, not a finding.
+
+### Decision 1: `UtcTicks` + `TimeZoneInfo`, everything else derived
+- **Cost per access.** Checked: `GetUtcOffset` is ~74 ns per call, no allocations. `Date`, `Time` and `Offset` each call it, so reading three properties of one value costs ~0.2 µs; a million rows in Lake or Avro is ~0.2 s of offsets alone. → Compute the offset once in the constructor and store it (`long UtcTicks`, `int OffsetSeconds`, `TimeZoneInfo Zone`). The instant stays the truth; the stored offset is a cache, recalculated only by `ToTimeZone`.
+- **Silent clamping at the range ends.** Checked: `ConvertTimeFromUtc(9999-12-31 23:00Z, Pacific/Kiritimati)` returns `9999-12-31 23:59:59` instead of overflowing; the wall clock is simply wrong. → Validate in the constructor that `UtcTicks + offset` stays inside `DateTime` range; throw otherwise. Do not go through `ConvertTimeFromUtc` for the derived fields, add the offset yourself.
+- **Struct `default`.** If it is a struct, `default` has `Zone == null` (see premortem #9). With the stored offset from the first point, `default` can simply mean 0001-01-01 UTC: treat `null` zone as `TimeZoneInfo.Utc` in the getter.
+
+### Decision 2: equality by instant
+- **Not a `record`.** A `record`/`record struct` generates equality over all fields, including `Zone`, which is the opposite of this decision. Write `Equals`/`GetHashCode`/operators by hand; add a test that `new(10:00, Warsaw)` and `new(08:00, UTC)` are one element of a `HashSet`.
+- **Consequence to document:** a `Dictionary<DateTimeZone, …>` or `Distinct()` keeps the zone of whichever element came first. Users who group by "same time and same zone" need `SameRepresentation` and a custom comparer; provide `DateTimeZoneComparer.Representation`.
+- **`SameRepresentation` must compare canonical zone IDs, not `TimeZoneInfo.Equals`.** Checked: `FindSystemTimeZoneById("Etc/UTC").Equals(TimeZoneInfo.Utc)` → false (`Etc/UTC` vs `UTC`); `Europe/Kiev` vs `Europe/Kyiv` → false; `TimeZoneInfo.Local.Id` on macOS is `Poland`. Same zone, three spellings.
+
+### Decision 3 and step 3: arithmetic
+- **Calendar arithmetic clamps and is not associative.** Checked: `2026-01-31 + 1 month` = `2026-02-28`. So `AddMonths(1).AddMonths(1)` ≠ `AddMonths(2)` from the 31st. That is the right behaviour, but tests and docs must state it.
+- **Duration between two values (`a - b`) is by instant.** Across a DST night, `a.AddDays(1) - a` = 23 h or 25 h. Document next to `AddDays`.
+
+### Decision 5: gap and overlap policies (the riskiest part)
+- **`TimeZoneInfo.ConvertTimeToUtc` cannot be used directly.** Checked: for a gap it throws `ArgumentException` (Warsaw 2026-03-29 02:30); for an overlap it silently picks **standard time** (Warsaw 2026-10-25 02:30 → 01:30Z, i.e. `Later`), while the plan's default is `Earlier`.
+- **Order of `GetAmbiguousTimeOffsets`.** Checked: ascending (`+01:00, +02:00`). `Earlier` instant = the **larger** offset, `Later` = the smaller. Choose by value (`Max`/`Min`), never by index.
+- **Gaps that `IsInvalidTime` does not see.** Checked: Pacific/Apia skipped 30 Dec 2011 entirely (offset −10 → +14), but `IsInvalidTime(2011-12-30 12:00)` = **false**, and the value round-trips to `2011-12-29 12:00`, a different day, with no error. Base-offset changes are not reported as invalid; DST gaps are (Antarctica/Troll's 2-hour gap is detected, checked). → Do not rely on `IsInvalidTime` alone. Algorithm: take the offsets 24 h before and 24 h after the wall time (`GetUtcOffset` on `wall - offset` candidates), try both, keep candidates whose round-trip gives the same wall time; 0 candidates = gap, 2 = overlap. Gap with `ShiftForward`: instant = `wall - offsetBefore` (shifts by the gap length, 02:30 → 03:30, Apia 12:00 on the 30th → 12:00 on the 31st).
+- **Test list must include:** Apia 2011-12-30, Antarctica/Troll (2 h gap), Australia/Lord_Howe (30-minute DST), a zone that changed its base offset without DST (e.g. Europe/Volgograd 2020), southern hemisphere (America/Santiago).
+
+### Decision 6: input
+- **`FromDateTime(Kind.Local)` in the overlap hour.** Checked: `DateTime` keeps a hidden "ambiguous daylight" bit, so `00:30Z.ToLocalTime()` and `01:30Z.ToLocalTime()` are both `02:30`, `==` says they are equal, and only `ToUniversalTime()` tells them apart (00:30Z / 01:30Z). Rebuilding the value from its ticks (any database or serializer does that) loses the bit: both become 01:30Z. → Implement `FromDateTime(Local)` as `dt.ToUniversalTime()` + `TimeZoneInfo.Local`, never as wall time + `InZone`. Document that a `Kind.Local` value that went through storage is already ambiguous in that hour.
+- **`FromDateTimeOffset` creates a fixed-offset zone that `FindSystemTimeZoneById` will not find.** Checked: `FindSystemTimeZoneById("+02:00")` → `TimeZoneNotFoundException`. → One factory (`Zones.FixedOffset(TimeSpan)`) with cached instances and a fixed ID format, used by both `FromDateTimeOffset` and `Parse`, so `SameRepresentation` works between them.
+- **Sub-minute offsets.** Checked: .NET truncates historical offsets to whole minutes (Africa/Monrovia 1970: .NET −00:44, tzdb −00:44:30). Values before 1972 will disagree with Java/Python/NodaTime by up to 59 s. Document as a limitation; keep the NodaTime oracle to 1972+.
+- **Pre-1970 data depends on the tzdata build.** Checked: Europe/Amsterdam in 1900 gives +00:00 on this machine (tzdb merged Amsterdam into Brussels in 2022, the original +00:19:32 lives only in `backzone`). The same instant can render differently on two servers. Document; do not test pre-1970 against an oracle.
+
+### Decision 7: IANA as canonical
+- **Invariant globalization breaks the fallback.** Checked: with `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`, `FindSystemTimeZoneById("Central European Standard Time")` throws and `TryConvertWindowsIdToIanaId` returns false. Invariant mode is common in containers and NativeAOT. On Linux IANA IDs still work; on Windows in invariant mode IANA IDs will not resolve at all. → Error message that names invariant mode; CI job with `InvariantGlobalization=true`.
+- **Canonicalization is needed and .NET has no API for it.** → Generate a small link→canonical table from tzdb `backward` (Europe/Kiev→Europe/Kyiv, Poland→Europe/Warsaw, Etc/UTC→UTC…). Use it in `ToString()`, `SameRepresentation` and `Zones.Resolve`. `TimeZoneInfo.Local` with ID `Local` or a path must never be written as `[Local]`; fall back to the offset only.
+- **`Zones` as static fields.** Static readonly fields of one class are initialized together; if one zone is missing on the machine (older tzdata, chiseled image), the whole class throws `TypeInitializationException`. → Properties backed by per-zone `Lazy<TimeZoneInfo>`, or only `Resolve(string)`.
+
+### Decision 8 and step 6: text
+- **`Z` vs `+00:00`.** In RFC 9557, `Z` means "instant known, local offset unknown", `+00:00` means "local time is UTC". Decide: `…Z` → UTC zone, `…Z[Europe/Warsaw]` → Warsaw. Tests for both.
+- **Precision.** RFC 9557 allows any number of fractional digits; `DateTime` has 7. Decide: truncate (and say so) or reject.
+- **Leap second `23:59:60`.** `DateTime` cannot hold it. Decide: map to `23:59:59.9999999` or reject. Java and PostgreSQL can emit it.
+- **Inconsistent offset and zone, critical flags, annotations:** see premortem #8.
+
+### Decision 9: System.Text.Json converters
+- **Dictionary keys.** A converter without `ReadAsPropertyName`/`WriteAsPropertyName` throws when the type is a dictionary key. Implement both for both types.
+- **Source generation and trimming.** `[JsonConverter]` on the type works with source-generated contexts, but add a test with `JsonSerializerContext` and `PublishTrimmed`, since Lake and AvroConvert users publish AOT.
+- **Newtonsoft path:** premortem #10.
+
+### Step 2: `Now(TimeProvider?)`
+- `DateTimeZone.Now(provider)` must use `provider.LocalTimeZone`, not `TimeZoneInfo.Local`; otherwise tests with a fake provider still depend on the machine's zone. `FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`) in the test project.
+
+### Formats (S7 and Lake): what the types can actually carry
+- Avro `timestamp-*`, Parquet `isAdjustedToUTC=true` and Iceberg `timestamptz` store **only the instant**. Writing a `DateTimeZone` and reading it back always returns UTC; with equality by instant, round-trip tests pass and nobody notices the zone is gone. → The mapping must document it, and a test should assert `SameRepresentation` is **false** after the round trip, so the loss is explicit. The zone survives only if the schema has a separate string field for it; offer that as an opt-in pattern (`[AvroZoneField("…")]` or similar) or leave it out of 2.0.
+- `local-timestamp-*` / Iceberg `timestamp` / Parquet `isAdjustedToUTC=false` ↔ `UnzonedDateTime` is the mapping that adds real value: today those come back as `DateTime` `Kind.Unspecified` and the user guesses.
