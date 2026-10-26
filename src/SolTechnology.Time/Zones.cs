@@ -24,6 +24,7 @@ public static class Zones
     /// <c>UTC</c>, or a fixed offset (<c>+02:00</c>, <c>UTC+02:00</c>).
     /// </summary>
     /// <exception cref="DateTimeZoneException">The zone does not exist on this system. The message says why, for example a missing tz database.</exception>
+    /// <remarks>For a zone known at compile time use <see cref="Resolve(Zone)"/>; a typo in a string shows up only at run time.</remarks>
     public static TimeZoneInfo Resolve(string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
@@ -38,7 +39,11 @@ public static class Zones
         return zone;
     }
 
-    /// <summary>Like <see cref="Resolve"/>, but returns <c>false</c> instead of throwing.</summary>
+    /// <summary>The zone for a <see cref="Zone"/> name.</summary>
+    /// <exception cref="DateTimeZoneException">The zone does not exist on this system, for example an old tzdata.</exception>
+    public static TimeZoneInfo Resolve(Zone zone) => Resolve(zone.Id);
+
+    /// <summary>Like <see cref="Resolve(string)"/>, but returns <c>false</c> instead of throwing.</summary>
     public static bool TryResolve(string? id, [NotNullWhen(true)] out TimeZoneInfo? zone)
     {
         zone = null;

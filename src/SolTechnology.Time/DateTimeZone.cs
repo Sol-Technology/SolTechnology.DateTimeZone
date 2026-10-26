@@ -32,25 +32,23 @@ public readonly partial struct DateTimeZone : IEquatable<DateTimeZone>, ICompara
     /// <param name="date">Date on the clock in the zone.</param>
     /// <param name="time">Time on the clock in the zone.</param>
     /// <param name="zone">The zone.</param>
-    /// <param name="gap">What to do if the clocks skip this time (spring forward).</param>
-    /// <param name="overlap">What to do if the clocks show this time twice (fall back).</param>
-    public DateTimeZone(DateOnly date, TimeOnly time, TimeZoneInfo zone, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier)
+    /// <param name="clockChange">How to read the time if it falls into a clock change (skipped or shown twice).</param>
+    public DateTimeZone(DateOnly date, TimeOnly time, TimeZoneInfo zone, ClockChange clockChange = ClockChange.PreviousOffset)
     {
         ArgumentNullException.ThrowIfNull(zone);
-        _value = ZoneResolver.Resolve(date.ToDateTime(time), zone, gap, overlap);
+        _value = ZoneResolver.Resolve(date.ToDateTime(time), zone, clockChange);
         _zone = zone;
     }
 
     /// <summary>
-    /// The instant at which the clocks in the zone <paramref name="zoneId"/> show <paramref name="date"/> and <paramref name="time"/>.
+    /// The point in time at which the clocks in <paramref name="zone"/> show <paramref name="date"/> and <paramref name="time"/>.
     /// </summary>
     /// <param name="date">Date on the clock in the zone.</param>
     /// <param name="time">Time on the clock in the zone.</param>
-    /// <param name="zoneId">IANA or Windows zone ID, see <see cref="Zones.Resolve"/>.</param>
-    /// <param name="gap">What to do if the clocks skip this time (spring forward).</param>
-    /// <param name="overlap">What to do if the clocks show this time twice (fall back).</param>
-    public DateTimeZone(DateOnly date, TimeOnly time, string zoneId, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier)
-        : this(date, time, Zones.Resolve(zoneId), gap, overlap)
+    /// <param name="zone">The zone, see <see cref="Zones.Resolve(Zone)"/>.</param>
+    /// <param name="clockChange">How to read the time if it falls into a clock change (skipped or shown twice).</param>
+    public DateTimeZone(DateOnly date, TimeOnly time, Zone zone, ClockChange clockChange = ClockChange.PreviousOffset)
+        : this(date, time, Zones.Resolve(zone), clockChange)
     {
     }
 

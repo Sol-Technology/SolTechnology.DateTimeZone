@@ -7,7 +7,7 @@ namespace SolTechnology.Time;
 /// <summary>
 /// A date and time on a clock, without a recorded zone: what Avro <c>local-timestamp-*</c>, Iceberg <c>timestamp</c>
 /// and Parquet <c>isAdjustedToUTC=false</c> store. It is not an instant: it becomes one only with a zone
-/// (<see cref="InZone(TimeZoneInfo, GapPolicy, OverlapPolicy)"/>) or by an explicit <see cref="AssumeUtc"/>.
+/// (<see cref="InZone(TimeZoneInfo, ClockChange)"/>) or by an explicit <see cref="AssumeUtc"/>.
 /// </summary>
 /// <param name="Date">The date.</param>
 /// <param name="Time">The time.</param>
@@ -28,12 +28,12 @@ public readonly record struct UnzonedDateTime(DateOnly Date, TimeOnly Time)
     public DateTime ToDateTime() => Date.ToDateTime(Time, DateTimeKind.Unspecified);
 
     /// <summary>The instant at which the clocks in <paramref name="zone"/> show this date and time.</summary>
-    public DateTimeZone InZone(TimeZoneInfo zone, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier) =>
-        new(Date, Time, zone, gap, overlap);
+    public DateTimeZone InZone(TimeZoneInfo zone, ClockChange clockChange = ClockChange.PreviousOffset) =>
+        new(Date, Time, zone, clockChange);
 
-    /// <summary>The instant at which the clocks in the zone <paramref name="zoneId"/> show this date and time.</summary>
-    public DateTimeZone InZone(string zoneId, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier) =>
-        new(Date, Time, zoneId, gap, overlap);
+    /// <summary>The instant at which the clocks in <paramref name="zone"/> show this date and time.</summary>
+    public DateTimeZone InZone(Zone zone, ClockChange clockChange = ClockChange.PreviousOffset) =>
+        new(Date, Time, Zones.Resolve(zone), clockChange);
 
     /// <summary>Reads this date and time as UTC. Only when you know it is.</summary>
     public DateTimeZone AssumeUtc() => DateTimeZone.FromInstant(ToDateTime().Ticks, TimeZoneInfo.Utc);

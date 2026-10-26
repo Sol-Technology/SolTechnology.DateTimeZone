@@ -13,9 +13,19 @@ public class ZoneResolverTests
     }
 
     [Test]
+    public void Gap_NewOffset_ReadsWithTheOffsetAfterTheChange()
+    {
+        var value = TestZones.At("Europe/Warsaw", 2026, 3, 29, 2, 30, ClockChange.NewOffset);
+
+        value.Wall().Should().Be("2026-03-29 01:30");
+        value.Offset().Should().Be("+01:00");
+        value.UtcDateTime.Should().Be(new DateTime(2026, 3, 29, 0, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
     public void Gap_Throw_Throws()
     {
-        var act = () => TestZones.At("Europe/Warsaw", 2026, 3, 29, 2, 30, gap: GapPolicy.Throw);
+        var act = () => TestZones.At("Europe/Warsaw", 2026, 3, 29, 2, 30, ClockChange.Throw);
 
         act.Should().Throw<DateTimeZoneException>().WithMessage("*does not exist in Europe/Warsaw*");
     }
@@ -34,13 +44,14 @@ public class ZoneResolverTests
     {
         // Samoa moved across the date line: 29 Dec 2011 23:59 (-10:00) was followed by 31 Dec 2011 00:00 (+14:00).
         // TimeZoneInfo.IsInvalidTime reports 30 Dec as valid; the resolver must not.
+        // tzdb: the jump happens at 2011-12-30 00:00 local, i.e. 10:00Z. Windows has the jump too, but at another instant,
+        // so 30 Dec 12:00 exists there and the test is skipped.
         var apia = TestZones.Require("Pacific/Apia");
-        var before = apia.GetUtcOffset(new DateTime(2011, 12, 29, 12, 0, 0, DateTimeKind.Utc));
-        var after = apia.GetUtcOffset(new DateTime(2011, 12, 31, 12, 0, 0, DateTimeKind.Utc));
-        if (after - before < TimeSpan.FromHours(20))
+        var before = apia.GetUtcOffset(new DateTime(2011, 12, 30, 9, 0, 0, DateTimeKind.Utc));
+        var after = apia.GetUtcOffset(new DateTime(2011, 12, 30, 11, 0, 0, DateTimeKind.Utc));
+        if (before != TimeSpan.FromHours(-10) || after != TimeSpan.FromHours(14))
         {
-            // Windows ships Samoa Standard Time without the 2011 jump, so 30 Dec exists there and there is nothing to test.
-            Assert.Ignore($"The time zone data on this system has no 2011 date-line change for Pacific/Apia ({before} on 29 Dec, {after} on 31 Dec).");
+            Assert.Ignore($"The time zone data on this system places Samoa's 2011 date-line change elsewhere than tzdb ({before} at 09:00Z, {after} at 11:00Z on 30 Dec).");
         }
 
         var value = TestZones.At("Pacific/Apia", 2011, 12, 30, 12);
@@ -48,7 +59,7 @@ public class ZoneResolverTests
         value.Wall().Should().Be("2011-12-31 12:00");
         value.Offset().Should().Be("+14:00");
 
-        var act = () => TestZones.At("Pacific/Apia", 2011, 12, 30, 12, gap: GapPolicy.Throw);
+        var act = () => TestZones.At("Pacific/Apia", 2011, 12, 30, 12, clockChange: ClockChange.Throw);
         act.Should().Throw<DateTimeZoneException>();
     }
 
@@ -65,7 +76,7 @@ public class ZoneResolverTests
     public void Overlap_EarlierAndLater()
     {
         var earlier = TestZones.At("Europe/Warsaw", 2026, 10, 25, 2, 30);
-        var later = TestZones.At("Europe/Warsaw", 2026, 10, 25, 2, 30, overlap: OverlapPolicy.Later);
+        var later = TestZones.At("Europe/Warsaw", 2026, 10, 25, 2, 30, ClockChange.NewOffset);
 
         earlier.Offset().Should().Be("+02:00");
         earlier.UtcDateTime.Should().Be(new DateTime(2026, 10, 25, 0, 30, 0, DateTimeKind.Utc));
@@ -77,7 +88,7 @@ public class ZoneResolverTests
     [Test]
     public void Overlap_Throw_Throws()
     {
-        var act = () => TestZones.At("Europe/Warsaw", 2026, 10, 25, 2, 30, overlap: OverlapPolicy.Throw);
+        var act = () => TestZones.At("Europe/Warsaw", 2026, 10, 25, 2, 30, ClockChange.Throw);
 
         act.Should().Throw<DateTimeZoneException>().WithMessage("*ambiguous in Europe/Warsaw*+02:00*+01:00*");
     }
@@ -86,7 +97,7 @@ public class ZoneResolverTests
     public void Overlap_HalfHourDst_LordHowe()
     {
         TestZones.At("Australia/Lord_Howe", 2026, 4, 5, 1, 45).Offset().Should().Be("+11:00");
-        TestZones.At("Australia/Lord_Howe", 2026, 4, 5, 1, 45, overlap: OverlapPolicy.Later).Offset().Should().Be("+10:30");
+        TestZones.At("Australia/Lord_Howe", 2026, 4, 5, 1, 45, ClockChange.NewOffset).Offset().Should().Be("+10:30");
     }
 
     [Test]
@@ -94,7 +105,7 @@ public class ZoneResolverTests
     {
         // Chile ends DST at 24:00 on Saturday: 23:xx on 4 April 2026 happens twice; starts it at 24:00 on Saturday: 00:xx on 6 September 2026 is skipped.
         TestZones.At("America/Santiago", 2026, 4, 4, 23, 30).Offset().Should().Be("-03:00");
-        TestZones.At("America/Santiago", 2026, 4, 4, 23, 30, overlap: OverlapPolicy.Later).Offset().Should().Be("-04:00");
+        TestZones.At("America/Santiago", 2026, 4, 4, 23, 30, ClockChange.NewOffset).Offset().Should().Be("-04:00");
 
         var gap = TestZones.At("America/Santiago", 2026, 9, 6, 0, 30);
         gap.Wall().Should().Be("2026-09-06 01:30");

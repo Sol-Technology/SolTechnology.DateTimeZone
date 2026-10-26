@@ -52,31 +52,30 @@ public readonly partial struct DateTimeZone
 
     /// <summary>
     /// The same time on the clock, <paramref name="days"/> days later in the zone. Across a DST night the instant moves
-    /// by 23 or 25 hours. If the time does not exist or exists twice on the new date, <paramref name="gap"/> and
-    /// <paramref name="overlap"/> decide.
+    /// by 23 or 25 hours. If the time is skipped or shown twice on the new date, <paramref name="clockChange"/> decides.
     /// </summary>
-    public DateTimeZone AddDays(int days, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier) =>
-        days == 0 ? this : InZone(_value.DateTime.AddDays(days), gap, overlap);
+    public DateTimeZone AddDays(int days, ClockChange clockChange = ClockChange.PreviousOffset) =>
+        days == 0 ? this : InZone(_value.DateTime.AddDays(days), clockChange);
 
     /// <summary>
     /// The same time on the clock, <paramref name="months"/> months later in the zone. The day is clamped to the end of
     /// the month (31 January + 1 month = 28 February), so <c>AddMonths(1).AddMonths(1)</c> is not always <c>AddMonths(2)</c>.
     /// </summary>
-    public DateTimeZone AddMonths(int months, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier) =>
-        months == 0 ? this : InZone(_value.DateTime.AddMonths(months), gap, overlap);
+    public DateTimeZone AddMonths(int months, ClockChange clockChange = ClockChange.PreviousOffset) =>
+        months == 0 ? this : InZone(_value.DateTime.AddMonths(months), clockChange);
 
     /// <summary>The same time on the clock, <paramref name="years"/> years later in the zone (29 February → 28 February).</summary>
-    public DateTimeZone AddYears(int years, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier) =>
-        years == 0 ? this : InZone(_value.DateTime.AddYears(years), gap, overlap);
+    public DateTimeZone AddYears(int years, ClockChange clockChange = ClockChange.PreviousOffset) =>
+        years == 0 ? this : InZone(_value.DateTime.AddYears(years), clockChange);
 
     /// <summary>The same date in the zone, at another time on the clock.</summary>
-    public DateTimeZone AtTime(TimeOnly time, GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier) =>
-        InZone(Date.ToDateTime(time), gap, overlap);
+    public DateTimeZone AtTime(TimeOnly time, ClockChange clockChange = ClockChange.PreviousOffset) =>
+        InZone(Date.ToDateTime(time), clockChange);
 
-    private DateTimeZone InZone(DateTime wall, GapPolicy gap, OverlapPolicy overlap)
+    private DateTimeZone InZone(DateTime wall, ClockChange clockChange)
     {
         var zone = Zone;
-        return FromResolved(ZoneResolver.Resolve(wall, zone, gap, overlap), zone);
+        return FromResolved(ZoneResolver.Resolve(wall, zone, clockChange), zone);
     }
 
     private DateTimeZone AddScaled(double value, long scale)

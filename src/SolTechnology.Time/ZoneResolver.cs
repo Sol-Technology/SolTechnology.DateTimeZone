@@ -22,7 +22,7 @@ internal static class ZoneResolver
     }
 
     /// <summary>The instant of a wall time in a zone, as a <see cref="DateTimeOffset"/> with the zone's offset.</summary>
-    public static DateTimeOffset Resolve(DateTime wall, TimeZoneInfo zone, GapPolicy gap, OverlapPolicy overlap)
+    public static DateTimeOffset Resolve(DateTime wall, TimeZoneInfo zone, ClockChange clockChange)
     {
         var wallTicks = wall.Ticks;
         if (Zones.IsUtc(zone) || Zones.IsFixed(zone))
@@ -58,13 +58,13 @@ internal static class ZoneResolver
 
         if (earlier is null || later is null)
         {
-            if (gap == GapPolicy.Throw)
+            if (clockChange == ClockChange.Throw)
             {
                 throw new DateTimeZoneException($"{Describe(wall)} does not exist in {zone.Id}: the clocks skip it ({Format(before)} → {Format(after)}).");
             }
 
-            // Shift forward by the length of the gap: read the wall time with the offset from before the gap.
-            var utcTicks = wallTicks - before.Ticks;
+            // Read the wall time with the offset from before the change (lands after the gap) or from after it (lands before).
+            var utcTicks = wallTicks - (clockChange == ClockChange.PreviousOffset ? before : after).Ticks;
             return Create(utcTicks + OffsetAt(zone, utcTicks).Ticks, OffsetAt(zone, utcTicks), zone);
         }
 
@@ -73,10 +73,10 @@ internal static class ZoneResolver
             return Create(wallTicks, earlier.Value, zone);
         }
 
-        return overlap switch
+        return clockChange switch
         {
-            OverlapPolicy.Earlier => Create(wallTicks, earlier.Value, zone),
-            OverlapPolicy.Later => Create(wallTicks, later.Value, zone),
+            ClockChange.PreviousOffset => Create(wallTicks, earlier.Value, zone),
+            ClockChange.NewOffset => Create(wallTicks, later.Value, zone),
             _ => throw new DateTimeZoneException($"{Describe(wall)} is ambiguous in {zone.Id}: it occurs at {Format(earlier.Value)} and again at {Format(later.Value)}.")
         };
     }

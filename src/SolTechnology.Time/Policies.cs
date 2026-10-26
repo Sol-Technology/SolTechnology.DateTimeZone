@@ -1,31 +1,26 @@
 namespace SolTechnology.Time;
 
 /// <summary>
-/// What to do with a wall time that does not exist in a zone, because the clocks jumped forward over it
-/// (02:30 on the night when Europe/Warsaw goes from 02:00 to 03:00).
+/// How to read a time on the clock that falls into a clock change, when the zone switches its UTC offset
+/// (daylight saving time, or a change of the base offset like Samoa in 2011). On such a night a time is either
+/// skipped (Europe/Warsaw, 29 March 2026: the clocks go from 02:00 to 03:00, there is no 02:30) or shown twice
+/// (25 October 2026: the clocks go from 03:00 back to 02:00, 02:30 happens at +02:00 and again at +01:00).
 /// </summary>
-public enum GapPolicy
+public enum ClockChange
 {
-    /// <summary>Move forward by the length of the gap: 02:30 becomes 03:30. Default.</summary>
-    ShiftForward = 0,
+    /// <summary>
+    /// Read the time with the offset from before the change. A skipped 02:30 is read as 02:30+01:00, which the new
+    /// clock shows as 03:30+02:00. A repeated 02:30 is the first one, 02:30+02:00. Default; Java and NodaTime do the same.
+    /// </summary>
+    PreviousOffset = 0,
 
-    /// <summary>Throw a <see cref="DateTimeZoneException"/>.</summary>
-    Throw = 1
-}
+    /// <summary>
+    /// Read the time with the offset from after the change. A skipped 02:30 is read as 02:30+02:00, which the old
+    /// clock shows as 01:30+01:00. A repeated 02:30 is the second one, 02:30+01:00.
+    /// </summary>
+    NewOffset = 1,
 
-/// <summary>
-/// What to do with a wall time that exists twice in a zone, because the clocks went back
-/// (02:30 on the night when Europe/Warsaw goes from 03:00 back to 02:00).
-/// </summary>
-public enum OverlapPolicy
-{
-    /// <summary>The first occurrence, with the larger offset (02:30+02:00). Default.</summary>
-    Earlier = 0,
-
-    /// <summary>The second occurrence, with the smaller offset (02:30+01:00).</summary>
-    Later = 1,
-
-    /// <summary>Throw a <see cref="DateTimeZoneException"/>.</summary>
+    /// <summary>Throw a <see cref="DateTimeZoneException"/> that names the zone and the change.</summary>
     Throw = 2
 }
 

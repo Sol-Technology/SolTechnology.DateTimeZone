@@ -7,8 +7,8 @@ public class UnzonedDateTimeTests
     {
         var value = new UnzonedDateTime(2026, 3, 29, 2, 30);
 
-        value.InZone("Europe/Warsaw").Wall().Should().Be("2026-03-29 03:30");
-        var act = () => value.InZone("Europe/Warsaw", GapPolicy.Throw);
+        value.InZone(TestZones.Warsaw).Wall().Should().Be("2026-03-29 03:30");
+        var act = () => value.InZone(TestZones.Warsaw, ClockChange.Throw);
         act.Should().Throw<DateTimeZoneException>();
     }
 

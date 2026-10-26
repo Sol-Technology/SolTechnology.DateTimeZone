@@ -6,8 +6,8 @@ internal static class TestZones
     public static TimeZoneInfo Utc => TimeZoneInfo.Utc;
 
     public static DateTimeZone At(string zone, int year, int month, int day, int hour, int minute = 0,
-        GapPolicy gap = GapPolicy.ShiftForward, OverlapPolicy overlap = OverlapPolicy.Earlier) =>
-        new(new DateOnly(year, month, day), new TimeOnly(hour, minute), Require(zone), gap, overlap);
+        ClockChange clockChange = ClockChange.PreviousOffset) =>
+        new(new DateOnly(year, month, day), new TimeOnly(hour, minute), Require(zone), clockChange);
 
     /// <summary>The zone, or the test is ignored when this system does not have it (e.g. Antarctica/Troll on Windows).</summary>
     public static TimeZoneInfo Require(string id)

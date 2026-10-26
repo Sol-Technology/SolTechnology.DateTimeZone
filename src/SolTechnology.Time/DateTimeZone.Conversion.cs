@@ -15,8 +15,8 @@ public readonly partial struct DateTimeZone
         return FromInstant(value.UtcTicks, zone);
     }
 
-    /// <summary>The instant of <paramref name="value"/>, seen in the zone <paramref name="zoneId"/>.</summary>
-    public static DateTimeZone FromDateTimeOffset(DateTimeOffset value, string zoneId) => FromDateTimeOffset(value, Zones.Resolve(zoneId));
+    /// <summary>The instant of <paramref name="value"/>, seen in <paramref name="zone"/>.</summary>
+    public static DateTimeZone FromDateTimeOffset(DateTimeOffset value, Zone zone) => FromDateTimeOffset(value, Zones.Resolve(zone));
 
     /// <summary>
     /// A UTC <see cref="DateTime"/>, seen in <paramref name="zone"/>. <see cref="DateTimeKind.Unspecified"/> is read as UTC
@@ -69,8 +69,8 @@ public readonly partial struct DateTimeZone
         return FromInstant(UtcTicks, zone);
     }
 
-    /// <summary>The same instant, seen in the zone <paramref name="zoneId"/>.</summary>
-    public DateTimeZone ToTimeZone(string zoneId) => ToTimeZone(Zones.Resolve(zoneId));
+    /// <summary>The same instant, seen in <paramref name="zone"/>.</summary>
+    public DateTimeZone ToTimeZone(Zone zone) => ToTimeZone(Zones.Resolve(zone));
 
     /// <summary>The same instant in UTC.</summary>
     public DateTimeZone ToUtc() => FromResolved(_value.ToUniversalTime(), TimeZoneInfo.Utc);

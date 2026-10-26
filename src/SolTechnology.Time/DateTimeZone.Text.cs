@@ -80,7 +80,7 @@ public readonly partial struct DateTimeZone : ISpanFormattable, ISpanParsable<Da
 
                 if (parsed.Offset is null)
                 {
-                    result = FromResolved(ZoneResolver.Resolve(parsed.Wall, zone, GapPolicy.ShiftForward, OverlapPolicy.Earlier), zone);
+                    result = FromResolved(ZoneResolver.Resolve(parsed.Wall, zone, ClockChange.PreviousOffset), zone);
                     return true;
                 }
 
@@ -97,7 +97,7 @@ public readonly partial struct DateTimeZone : ISpanFormattable, ISpanParsable<Da
                         result = FromInstant(utcTicks, zone);
                         return true;
                     case OffsetConflict.UseZone:
-                        result = FromResolved(ZoneResolver.Resolve(parsed.Wall, zone, GapPolicy.ShiftForward, OverlapPolicy.Earlier), zone);
+                        result = FromResolved(ZoneResolver.Resolve(parsed.Wall, zone, ClockChange.PreviousOffset), zone);
                         return true;
                     default:
                         error = $"the offset {Format(parsed.Offset.Value)} is not the offset of {parsed.Zone} at that time ({Format(ZoneResolver.OffsetAt(zone, utcTicks))})";

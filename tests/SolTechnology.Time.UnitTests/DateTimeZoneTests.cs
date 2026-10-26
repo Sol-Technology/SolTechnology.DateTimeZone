@@ -84,7 +84,7 @@ public class DateTimeZoneTests
     {
         var warsaw = TestZones.At("Europe/Warsaw", 2026, 7, 1, 10);
 
-        var tokyo = warsaw.ToTimeZone("Asia/Tokyo");
+        var tokyo = warsaw.ToTimeZone(Zones.Resolve("Asia/Tokyo"));
 
         tokyo.Should().Be(warsaw);
         tokyo.Wall().Should().Be("2026-07-01 17:00");
@@ -104,7 +104,7 @@ public class DateTimeZoneTests
     [Test]
     public void FromDateTimeOffset_WithZone_ShowsTheInstantInTheZone()
     {
-        var value = DateTimeZone.FromDateTimeOffset(new DateTimeOffset(2026, 7, 1, 8, 0, 0, TimeSpan.Zero), "Europe/Warsaw");
+        var value = DateTimeZone.FromDateTimeOffset(new DateTimeOffset(2026, 7, 1, 8, 0, 0, TimeSpan.Zero), TestZones.Warsaw);
 
         value.Wall().Should().Be("2026-07-01 10:00");
         value.AddMonths(6).Offset().Should().Be("+01:00");

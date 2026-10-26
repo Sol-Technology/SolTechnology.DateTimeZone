@@ -44,7 +44,7 @@ public class ArithmeticTests
         var start = TestZones.At("Europe/Warsaw", 2026, 3, 28, 2, 30);
 
         start.AddDays(1).Wall().Should().Be("2026-03-29 03:30");
-        var act = () => start.AddDays(1, gap: GapPolicy.Throw);
+        var act = () => start.AddDays(1, ClockChange.Throw);
         act.Should().Throw<DateTimeZoneException>();
     }
 
@@ -68,7 +68,7 @@ public class ArithmeticTests
     [Test]
     public void ZeroCalendarStep_ReturnsTheSameInstant()
     {
-        var later = TestZones.At("Europe/Warsaw", 2026, 10, 25, 2, 30, overlap: OverlapPolicy.Later);
+        var later = TestZones.At("Europe/Warsaw", 2026, 10, 25, 2, 30, ClockChange.NewOffset);
 
         later.AddDays(0).Should().Be(later);
         later.AddMonths(0).Should().Be(later);
