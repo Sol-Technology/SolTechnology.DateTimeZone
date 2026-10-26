@@ -76,7 +76,7 @@ Out of scope for 2.0: non-ISO calendars, `Period`/`Duration`, bundled tzdb, Rosl
 - [ ] Publishing: `publish.yml` written (tag `v*`, environment `nuget`, repo variable `NUGET_USER`). To do on nuget.org and GitHub: Trusted Publishing policy (owner `Sol-Technology`, repository `SolTechnology.DateTimeZone`, workflow `publish.yml`, environment `nuget`), environment `nuget` and variable `NUGET_USER` in the repository settings.
 
 ### 1. Project housekeeping
-- [x] Project and solution stay `SolTechnology.Time` (namespace), `PackageId`/`AssemblyName` stay `SolTechnology.DateTimeZone`. Solution file kept as `.sln`.
+- [x] Project and solution stay `SolTechnology.Time` (namespace), `PackageId`/`AssemblyName` stay `SolTechnology.DateTimeZone`. Solution file `SolTechnology.Time.slnx` (migrated from `.sln`).
 - [x] `TargetFrameworks` `net8.0;net10.0`; `Version` 2.0.0-preview.1; MIT; `PackageReadmeFile`; `Deterministic`, `ContinuousIntegrationBuild`, SourceLink; `GenerateDocumentationFile`.
 - [x] Remove `todo.cs`, `TestTest.cs`, `.github/runTests.ps1`.
 - [x] Tests: NUnit + AwesomeAssertions (same as AvroConvert).

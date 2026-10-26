@@ -21,7 +21,7 @@ jobs:
           8.0.x
           10.0.x
     - name: Build
-      run: dotnet build SolTechnology.Time.sln -c Release
+      run: dotnet build SolTechnology.Time.slnx -c Release
     - name: Test
       run: dotnet test tests/SolTechnology.Time.UnitTests -c Release --no-build
       # One leg with a local zone that has DST, so FromDateTime(Kind.Local) is tested in an ambiguous hour.

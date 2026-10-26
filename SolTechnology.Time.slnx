@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/docs/">
+    <File Path="README.md" />
+    <File Path="docs/Plan-2.0.md" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SolTechnology.Time.OracleTests/SolTechnology.Time.OracleTests.csproj" />
+    <Project Path="tests/SolTechnology.Time.UnitTests/SolTechnology.Time.UnitTests.csproj" />
+  </Folder>
+  <Project Path="src/SolTechnology.Time/SolTechnology.Time.csproj" />
+</Solution>

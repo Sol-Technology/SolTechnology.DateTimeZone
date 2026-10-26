@@ -35,7 +35,7 @@ jobs:
 
     - name: Build and test
       run: |
-        dotnet build SolTechnology.Time.sln -c Release
+        dotnet build SolTechnology.Time.slnx -c Release
         dotnet test tests/SolTechnology.Time.UnitTests -c Release --no-build
 
     - name: Pack
