@@ -34,6 +34,15 @@ public class ZoneResolverTests
     {
         // Samoa moved across the date line: 29 Dec 2011 23:59 (-10:00) was followed by 31 Dec 2011 00:00 (+14:00).
         // TimeZoneInfo.IsInvalidTime reports 30 Dec as valid; the resolver must not.
+        var apia = TestZones.Require("Pacific/Apia");
+        var before = apia.GetUtcOffset(new DateTime(2011, 12, 29, 12, 0, 0, DateTimeKind.Utc));
+        var after = apia.GetUtcOffset(new DateTime(2011, 12, 31, 12, 0, 0, DateTimeKind.Utc));
+        if (after - before < TimeSpan.FromHours(20))
+        {
+            // Windows ships Samoa Standard Time without the 2011 jump, so 30 Dec exists there and there is nothing to test.
+            Assert.Ignore($"The time zone data on this system has no 2011 date-line change for Pacific/Apia ({before} on 29 Dec, {after} on 31 Dec).");
+        }
+
         var value = TestZones.At("Pacific/Apia", 2011, 12, 30, 12);
 
         value.Wall().Should().Be("2011-12-31 12:00");

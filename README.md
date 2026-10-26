@@ -1,76 +1,140 @@
 <p align="center">
-    <img alt="SolTechnology-logo" src="./docs/logo.png" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.png">
+    <img alt="SolTechnology / DateTimeZone" src="./docs/logo.png" width="380">
+  </picture>
 </p>
-
-<h2 align="center">
-  SolTechnology.DateTimeZone
-</h2>
 
 <p align="center">
- <a href="https://www.nuget.org/packages/SolTechnology.DateTimeZone"><img src="https://img.shields.io/nuget/vpre/SolTechnology.DateTimeZone?logo=nuget"></a>
- <a href="https://github.com/Sol-Technology/SolTechnology.DateTimeZone/actions/workflows/build.yml"><img src="https://github.com/Sol-Technology/SolTechnology.DateTimeZone/actions/workflows/build.yml/badge.svg"></a>
+  A point in time, together with the time zone it is seen in
 </p>
 
-**A point in time, together with the time zone it is seen in.** `DateTimeZone` holds a `DateTimeOffset` and a `TimeZoneInfo` and keeps them consistent: the offset is always the right one for that instant in that zone, also after `AddDays` across a DST night. A date and time without a recorded zone is a different type, `UnzonedDateTime`, never an implicit UTC.
+<p align="center">
+ <a href="https://www.nuget.org/packages/SolTechnology.DateTimeZone"><img src="https://img.shields.io/nuget/vpre/SolTechnology.DateTimeZone?label=NuGet&logo=nuget&color=blue"></a>
+ <a href="https://github.com/Sol-Technology/SolTechnology.DateTimeZone/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Sol-Technology/SolTechnology.DateTimeZone/build.yml?label=Build&logo=github"></a>
+ <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-MIT-2F7D7A.svg"></a>
+</p>
 
-```
-dotnet add package SolTechnology.DateTimeZone --prerelease
-```
+## Docs
+
+[Documentation](./docs/Documentation.md)
+
+[Release notes](./docs/release-notes)
+
+[RFC 9557, the text format](https://www.rfc-editor.org/rfc/rfc9557)
+
+
+## Why DateTimeZone
+
+**`DateTimeOffset` remembers the offset, not the zone.** Add a week to a 10:00 meeting in Warsaw across the last Sunday of October and the result still carries +02:00, an offset Warsaw no longer has; on a Warsaw clock it is 09:00. `DateTimeZone` is a `DateTimeOffset` plus a `TimeZoneInfo`, kept consistent, so the offset is always the one the zone has at that instant. A date and time with no zone recorded is a separate type, `UnzonedDateTime`, never a silent UTC.
+
+|                                                           | DateTimeZone | DateTimeOffset |     DateTime      | NodaTime |
+|-----------------------------------------------------------|:------------:|:--------------:|:-----------------:|:--------:|
+| Keeps the instant                                         |      ✔️      |       ✔️       |  only `Kind.Utc`  |    ✔️    |
+| Keeps the zone                                            |      ✔️      |  offset only   |        ❌         |    ✔️    |
+| Offset stays right after `AddDays` across a DST change    |      ✔️      |       ❌       |        ❌         |    ✔️    |
+| Skipped and repeated wall times: an explicit policy       |      ✔️      |       ❌       |        ❌         |    ✔️    |
+| Date and time without a zone is a separate type           | `UnzonedDateTime` |    ❌     | `Kind.Unspecified` | `LocalDateTime` |
+| Text keeps the zone                                       | RFC 9557 `[Europe/Warsaw]` | ❌ |        ❌         | own patterns |
+| Built on `DateTimeOffset`, `TimeZoneInfo`, `DateOnly`, `TimeOnly` | ✔️  |       ✔️       |        ✔️         | own types, own tzdb |
+| Dependencies                                              |  0, 62 KB    |       0        |         0         | 1 package, 524 KB with its own tzdb (3.3.6) |
+| Calendars, `Period`, `Duration`                           |      ❌      |       ❌       |        ❌         |    ✔️    |
+
+What it means for your code:
+* **One type for "when and where"** – the zone travels with the value through methods, JSON and logs, so nobody has to remember which `DateTime` was in which zone
+* **Arithmetic you can reason about** – `AddHours(24)` moves the instant, `AddDays(1)` moves the clock; across a DST night they differ and the names say so
+* **No guessing** – `Kind.Unspecified` is rejected, a wall time that does not exist or exists twice is resolved by a policy you chose, not by whatever `TimeZoneInfo` felt like
+
+NodaTime is the complete solution. This one is for code that already lives on BCL types and wants the zone to stay attached, without adopting a second time model.
+
+
+## Features
+
+* Create
 
 ```csharp
 using SolTechnology.Time;
 
 var meeting = new DateTimeZone(new DateOnly(2026, 10, 24), new TimeOnly(10, 0), "Europe/Warsaw");
-meeting.ToString();               // 2026-10-24T10:00:00+02:00[Europe/Warsaw]
-
-var nextWeek = meeting.AddDays(7); // 2026-10-31T10:00:00+01:00[Europe/Warsaw], same time on the clock, new offset
-var in24h = meeting.AddHours(24);  // 2026-10-25T09:00:00+01:00[Europe/Warsaw], 24 hours later (the night had 25)
-
-meeting.ToTimeZone("Asia/Tokyo");  // same instant: 2026-10-24T17:00:00+09:00[Asia/Tokyo]
-meeting == meeting.ToUtc();        // true, equality is by instant
+meeting.ToString();     // 2026-10-24T10:00:00+02:00[Europe/Warsaw]
 ```
+<br/>
 
-## The rules
-
-- **The instant is the truth.** `==`, `<`, `GetHashCode` compare instants, like `DateTimeOffset`. `SameRepresentation` (or `DateTimeZoneComparer.Representation`) also compares the zone.
-- **Two kinds of arithmetic.** `AddHours`, `AddMinutes`, `Add(TimeSpan)` move the instant. `AddDays`, `AddMonths`, `AddYears`, `AtTime` move the date on the clock in the zone. Across a DST night `AddDays(1)` is 23 or 25 hours.
-- **No guessing.** `DateTimeZone.FromDateTime` takes `Kind.Utc` and `Kind.Local`; `Kind.Unspecified` throws, because the zone is not known. Use `UnzonedDateTime.FromDateTime(value).InZone(zone)`.
-- **Times that don't exist or exist twice** (DST changes, Samoa skipping 30 December 2011) are resolved by `GapPolicy` (`ShiftForward` by default, or `Throw`) and `OverlapPolicy` (`Earlier` by default, `Later`, `Throw`).
+* Two kinds of arithmetic
 
 ```csharp
-new DateTimeZone(new DateOnly(2026, 3, 29), new TimeOnly(2, 30), "Europe/Warsaw");   // 03:30+02:00, the clocks skip 02:00-03:00
-new DateTimeZone(new DateOnly(2026, 10, 25), new TimeOnly(2, 30), "Europe/Warsaw",
-    overlap: OverlapPolicy.Later);                                                     // 02:30+01:00, the second 02:30
+meeting.AddDays(7);     // 2026-10-31T10:00:00+01:00[Europe/Warsaw]   same clock time, new offset
+meeting.AddHours(24);   // 2026-10-25T09:00:00+01:00[Europe/Warsaw]   24 hours later, the night had 25
 ```
+<br/>
 
-## UnzonedDateTime
+* Same instant, another zone
 
-A date and time on a clock, without a zone. This is what Avro `local-timestamp-*`, Iceberg `timestamp` and Parquet `isAdjustedToUTC=false` store.
+```csharp
+meeting.ToTimeZone("Asia/Tokyo");   // 2026-10-24T17:00:00+09:00[Asia/Tokyo]
+meeting == meeting.ToUtc();         // true, equality is by instant
+```
+<br/>
+
+* Times that do not exist or exist twice
+
+```csharp
+new DateTimeZone(new DateOnly(2026, 3, 29), new TimeOnly(2, 30), "Europe/Warsaw");    // 03:30+02:00, shifted past the gap
+new DateTimeZone(new DateOnly(2026, 10, 25), new TimeOnly(2, 30), "Europe/Warsaw",
+    overlap: OverlapPolicy.Later);                                                      // 02:30+01:00, the second 02:30
+```
+<br/>
+
+* No zone recorded? Say so
 
 ```csharp
 var local = UnzonedDateTime.Parse("2026-10-24T10:00:00");
 local.InZone("Europe/Warsaw");   // becomes an instant only with a zone
 local.AssumeUtc();               // or when you know it is UTC
 ```
+<br/>
 
-## Text and JSON
+* Text and JSON
 
-RFC 9557: `2026-10-24T10:00:00+02:00[Europe/Warsaw]`. UTC is written as `…Z`, a fixed offset as `…+02:00`. `Parse` accepts `…Z[Europe/Warsaw]` (an instant seen in the zone) and `…T10:00[Europe/Warsaw]` (a wall time in the zone). If the offset is wrong for the zone, `Parse` throws; `OffsetConflict.UseOffset` / `UseZone` choose one side instead.
+```csharp
+DateTimeZone.Parse("2026-10-24T10:00:00+02:00[Europe/Warsaw]");
+JsonSerializer.Serialize(meeting);   // "2026-10-24T10:00:00+02:00[Europe/Warsaw]", converters are built in
+```
 
-Both types have `System.Text.Json` converters built in (also as dictionary keys and with source generation).
+**Extended list:** <br>
+1. [Creating a value](./docs/Documentation.md#creating-a-value) from wall time, `DateTimeOffset`, `DateTime`, `TimeProvider`
+2. [Equality and ordering](./docs/Documentation.md#equality-and-ordering) by instant, `SameRepresentation` when the zone matters
+3. [Arithmetic](./docs/Documentation.md#arithmetic): instant vs calendar
+4. [Gaps and overlaps](./docs/Documentation.md#gaps-and-overlaps): `GapPolicy`, `OverlapPolicy`, Samoa 2011
+5. [UnzonedDateTime](./docs/Documentation.md#unzoneddatetime) for Avro `local-timestamp-*`, Iceberg `timestamp`, Parquet `isAdjustedToUTC=false`
+6. [Zones](./docs/Documentation.md#zones): IANA and Windows IDs, aliases, fixed offsets
+7. [Text format](./docs/Documentation.md#text-format) and [JSON](./docs/Documentation.md#json)
+8. [Limits](./docs/Documentation.md#limits): instant-only formats, no tzdata in chiseled images, Windows history
+9. [Upgrading from 1.x](./docs/Documentation.md#upgrading-from-1x)
 
-Zone IDs: IANA (`Europe/Warsaw`) or Windows (`Central European Standard Time`). Aliases are written in their canonical form (`Poland` → `Europe/Warsaw`, `Europe/Kiev` → `Europe/Kyiv`).
+[Full documentation](./docs/Documentation.md)
 
-## Limits
 
-- Avro `timestamp-*`, Parquet `isAdjustedToUTC=true` and Iceberg `timestamptz` store only the instant. A `DateTimeZone` written there comes back in UTC: same instant, zone gone.
-- Zones come from the operating system (no bundled tz database). Chiseled and distroless .NET images and Alpine have no tzdata; you get an exception that says so. Install `tzdata` or use an `-extra` image.
-- In globalization invariant mode, Windows and IANA IDs cannot be converted into each other.
-- Before 1972 offsets can differ from other libraries by seconds (.NET rounds them to minutes), and data before 1970 depends on the tzdata build.
-- NodaTime also has a type called `DateTimeZone` (a zone, not an instant). With both packages: `using NodaDateTimeZone = NodaTime.DateTimeZone;`.
+## Limits worth knowing before you start
 
-## Version 1.x
+- Zones come from the operating system. Chiseled and distroless images have no tzdata; the exception says so.
+- Avro `timestamp-*`, Parquet `isAdjustedToUTC=true` and Iceberg `timestamptz` store only the instant. The zone does not survive a round trip through them.
+- 1.x calculated offsets without DST. 2.0 is a rewrite with a different API, do not stay on 1.x.
 
-2.0 is a rewrite. 1.x calculated offsets without DST and assumed UTC for values without a zone, so do not stay on it.
+The rest is in [Limits](./docs/Documentation.md#limits).
 
-MIT licence.
+
+## License
+
+MIT. Free for everyone, see [LICENSE](./LICENSE).
+
+
+## Contribution
+
+If you have an idea, hit a zone that behaves differently than you expected, or found a better way to do something, leave an issue or a pull request.
+
+
+## Related Work
+
+- [![Nuget](https://img.shields.io/nuget/dt/AvroConvert?label=AvroConvert&logo=nuget)](https://github.com/AdrianStrugala/AvroConvert) – Apache Avro serializer for .NET, from the same author
+- [soltechnology.dev](https://soltechnology.dev) – the SolTechnology libraries

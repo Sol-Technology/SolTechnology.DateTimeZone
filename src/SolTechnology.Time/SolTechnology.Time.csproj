@@ -18,7 +18,7 @@
 		<PackageTags>datetime timezone time-zone dst iana rfc9557 datetimeoffset timezoneinfo</PackageTags>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageIcon>docs\mini-logo.png</PackageIcon>
+		<PackageIcon>docs\icon.png</PackageIcon>
 		<RepositoryUrl>https://github.com/Sol-Technology/SolTechnology.DateTimeZone</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageProjectUrl>https://github.com/Sol-Technology/SolTechnology.DateTimeZone</PackageProjectUrl>
@@ -29,7 +29,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<None Include="..\..\docs\mini-logo.png" Pack="true" Visible="false" PackagePath="docs\mini-logo.png" />
+		<None Include="..\..\docs\icon.png" Pack="true" Visible="false" PackagePath="docs\icon.png" />
 		<None Include="..\..\README.md" Pack="true" Visible="false" PackagePath="\" />
 		<None Include="..\..\LICENSE" Pack="true" Visible="false" PackagePath="\" />
 	</ItemGroup>
