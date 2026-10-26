@@ -1,18 +1,20 @@
 # SolTechnology.DateTimeZone 2.0 – plan
 
-Status: 26 Oct 2026. Package `SolTechnology.DateTimeZone` 1.0.1 (~100 downloads), repository moving from `AdrianStrugala` to `Sol-Technology`, project named `SolTechnology.Time`, net6.0. The package promise: **a point in time and its representations in time zones, with no "local time" of unknown zone**. The package name stays `SolTechnology.DateTimeZone`; project name and namespace must match it.
+Status: 26 Oct 2026 (rewritten after the premortem and design review in the appendices). Package `SolTechnology.DateTimeZone` 1.0.1 (~100 downloads), repository `Sol-Technology/SolTechnology.DateTimeZone`, project `SolTechnology.Time`, net6.0.
 
-MIT, free. Role in the SolTechnology family: the shared time model for AvroConvert 4.x (`timestamp-*` / `local-timestamp-*`, item S7 in `V4ReleasePlan.md`) and for Lake (Parquet `isAdjustedToUTC`, Iceberg `timestamp` vs `timestamptz`, Arrow `timestamp[tz]`).
+The promise: **a point in time, together with the time zone it is seen in.** `DateTimeZone` holds the instant (as a `DateTimeOffset`) and the zone, so the offset is always the right one for that instant in that zone, also after arithmetic. A date and time without a recorded zone is a different type, `UnzonedDateTime`, never an implicit UTC.
+
+MIT, free. Role in the SolTechnology family: the time model for AvroConvert 4.x (`timestamp-*` / `local-timestamp-*`) and Lake (Parquet `isAdjustedToUTC`, Iceberg `timestamp` vs `timestamptz`).
 
 ## Purpose and expectations
 
-The problem is real: `DateTime.Kind` loses the zone on first serialization, `DateTimeOffset` keeps an offset rather than a zone (after `AddMonths` across a DST change the offset is wrong), and dates shifted by an hour are a recurring topic in AvroConvert issues. But the market already has NodaTime (MIT, ~100M downloads), and people who do not know they have the problem do not look for a time library.
+`DateTime.Kind` loses the zone on first serialization. `DateTimeOffset` keeps the instant but only an offset: after `AddMonths` across a DST change the offset is wrong for the zone, and there is no zone to fix it with. `DateTimeZone` is `DateTimeOffset` + `TimeZoneInfo`, kept consistent.
 
-So this package is **the time model for SolTechnology products**, not a NodaTime competitor. A user who reads Avro and writes Iceberg should not lose zone information on the way. Most users will get it as a transitive dependency and never know it is a separate package.
+Not a NodaTime competitor (MIT, ~100M downloads, own tzdb). The difference: built on BCL types (`DateTimeOffset`, `TimeZoneInfo`, `DateOnly`, `TimeOnly`), no own tzdb, converts to and from them without ceremony, small API.
 
-Success metric: fewer date-related issues in AvroConvert after 4.0. Not downloads, not stars, no "NodaTime killer" article. Keep the scope to what data formats require.
+Success metric: AvroConvert and Lake map their timestamp types to these two types without loss of what the format can carry, and no wrong-instant bug is reported in 2.x. Not downloads.
 
-Alternative considered: depend on NodaTime from AvroConvert and Lake. Rejected because it forces a second date model into users' code (converters, versioning) and cannot be shaped around format needs. Two small types of our own are two evenings of code and no third-party tzdb to maintain.
+Honest limit, to state in the README: Avro `timestamp-*`, Parquet `isAdjustedToUTC=true` and Iceberg `timestamptz` store **only the instant**. A `DateTimeZone` written there comes back in UTC (same instant, `==` is true, zone gone). The zone survives only if the data has a separate field for it.
 
 ## Why 2.0 rather than patches
 
@@ -25,84 +27,105 @@ The current code breaks its own promise in four places; each yields a different 
 | 3 | `new DateTimeZone(DateTime)` with `Kind.Unspecified` silently assumes UTC | `DateTimeZone.cs` | values from databases and files (almost always `Unspecified`) get the wrong zone without warning |
 | 4 | Record equality compares `Date/Time/Zone`; `<`/`>` compare by UTC | `DateTimeZone.cs`, `Arithmetic.cs` | same instant in two zones: `==` false, while `>=` and `<=` are both true |
 
-Also: `ZoneSelector` holds Windows IDs (work on Linux only via ICU, no IANA), `Parse` with an offset picks "the first zone with that offset" (arbitrary), `AddSeconds` goes through `AddMinutes(s/60)`, net6.0 is out of support, `actions/checkout@v2` and `setup-dotnet@v1` are deprecated.
+Also: `ZoneSelector` holds Windows IDs, `Parse` with an offset picks "the first zone with that offset", `AddSeconds` goes through `AddMinutes(s/60)`, net6.0 is out of support, CI actions are deprecated.
 
 ## Design decisions
 
-1. **Internal representation of `DateTimeZone`: `long UtcTicks` + `TimeZoneInfo Zone`.** The instant is the truth; `Date`/`Time`/`Offset` are derived from `Zone.GetUtcOffset(instant)`. Fixes 1, 2 and 4 at once.
-2. **Equality and ordering by instant.** `new(10:00, Warsaw) == new(08:00, UTC)` → true. The zone is a representation, not identity. `SameRepresentation(other)` for the rare case where the zone matters too.
-3. **Two kinds of arithmetic, named explicitly.** `Add(TimeSpan)`, `AddHours/Minutes/Seconds/Milliseconds/Ticks` operate on the instant (always correct across DST). `AddDays/AddMonths/AddYears` operate on the calendar in the zone ("next week at 10:00" is what a human means) and then re-anchor using the policies in point 5.
-4. **New type `UnzonedDateTime`** (`DateOnly` + `TimeOnly`): a date and time whose zone was not recorded. No `Now`, no `ToUtc`, no comparison operators against `DateTimeZone`. Exits: `InZone(TimeZoneInfo, GapPolicy, OverlapPolicy)` → `DateTimeZone` and `AssumeUtc()`. From the other side: `DateTimeZone.ToUnzoned()` (deliberately dropping the zone, e.g. before writing `local-timestamp-*`).
-5. **Gap and overlap policies** when anchoring wall time: `GapPolicy { ShiftForward (default), Throw }`, `OverlapPolicy { Earlier (default), Later, Throw }`. Optional parameters with defaults, not global state.
-6. **No guessing on input.** `DateTimeZone.FromDateTime(DateTime)` accepts `Kind.Utc` and `Kind.Local`; for `Unspecified` it throws `DateTimeZoneException` pointing to `UnzonedDateTime.FromDateTime(dt).InZone(...)`. `FromDateTimeOffset` creates a fixed-offset zone (an offset is not a zone; document it). `Parse` with neither zone nor offset returns `UnzonedDateTime`, not `DateTimeZone`.
-7. **IANA as the canonical ID.** Static class `Zones` (`Zones.EuropeWarsaw`), list generated by a script from tzdb, resolved via `TimeZoneInfo.FindSystemTimeZoneById` with `TryConvertIanaIdToWindowsId` / reverse as fallback. No bundled tzdb (that is NodaTime's job; `ToNodaTime()` converters in a separate package if anyone asks).
-8. **Text format: RFC 9557** (ISO 8601 + `[Europe/Warsaw]`): `2026-10-18T10:00:00+02:00[Europe/Warsaw]`. Offset without a name → fixed-offset zone. Neither → `UnzonedDateTime`. `ToString()` round-trips; `ToString(format)` delegates to `DateTimeOffset` for the zone-less part.
-9. **Serialization from the first release**: `System.Text.Json` converters for both types (in the main package, no dependencies); mapping in AvroConvert 4.x: `timestamp-*` ↔ `DateTimeZone` (always written as a UTC instant), `local-timestamp-*` ↔ `UnzonedDateTime`.
-10. **Targets `net8.0;net10.0`**, `Nullable` and `TreatWarningsAsErrors`, `Microsoft.CodeAnalysis.PublicApiAnalyzers` so that the 2.0 surface is deliberate.
+1. **`DateTimeZone` wraps a `DateTimeOffset` and a `TimeZoneInfo`.** `readonly struct` with two fields: `DateTimeOffset _value` (instant + offset) and `TimeZoneInfo _zone`. Invariant, enforced by every constructor and operation: `_value.Offset == _zone.GetUtcOffset(_value.UtcDateTime)`. `Date`, `Time`, `Offset`, `UtcDateTime` come straight from `_value`, so reading them costs nothing (review B1: `GetUtcOffset` is ~74 ns, called once per value instead of per property). `ToDateTimeOffset()` returns `_value`. `default` has a `null` zone and is treated as `0001-01-01T00:00Z` in UTC.
+2. **Equality and ordering by instant**, like `DateTimeOffset`. Written by hand, not a `record` (a record would compare the zone too). `SameRepresentation(other)` = same instant and same canonical zone ID. `DateTimeZoneComparer.Representation` for dictionaries and `Distinct` that must keep zones apart.
+3. **Two kinds of arithmetic, named explicitly.**
+   - Instant: `Add(TimeSpan)`, `AddHours/Minutes/Seconds/Milliseconds/Ticks`, `+`/`-` with `TimeSpan`. Implemented as `_value.Add(x)` and then re-reading the offset in `_zone`. Always correct across DST.
+   - Calendar: `AddDays/AddMonths/AddYears`, `AtTime(TimeOnly)`. Wall clock → `DateOnly`/`TimeOnly` arithmetic → back to an instant through `ZoneResolver` (decision 4).
+   - `a - b` → `TimeSpan` by instant. Documented: `a.AddDays(1) - a` is 23 h or 25 h across a DST night; `AddMonths` clamps (31 Jan + 1 month = 28 Feb), so `AddMonths(1).AddMonths(1)` ≠ `AddMonths(2)`.
+4. **One place that turns wall time into an instant: `ZoneResolver`.** `Resolve(DateOnly, TimeOnly, TimeZoneInfo, GapPolicy, OverlapPolicy) → DateTimeOffset`. Everything that starts from a wall clock goes through it (calendar arithmetic, `UnzonedDateTime.InZone`, the wall-time constructor, `Parse` with a zone). It does **not** use `TimeZoneInfo.ConvertTimeToUtc` or `IsInvalidTime` (review B5: the first throws on gaps and picks standard time on overlaps; the second misses base-offset changes such as Pacific/Apia skipping 30 Dec 2011). Algorithm:
+   1. `before = zone.GetUtcOffset(wall - 1 day as UTC)`, `after = zone.GetUtcOffset(wall + 1 day as UTC)` (plus the offset at `wall` itself).
+   2. For each distinct candidate offset `o`: instant `= wall - o`; keep it if `zone.GetUtcOffset(instant) == o`.
+   3. One candidate → done. Two → overlap: `Earlier` = the larger offset, `Later` = the smaller (never by index), `Throw`. None → gap: `ShiftForward` = `wall - before` (moves forward by the gap length, 02:30 → 03:30, Apia 30 Dec 12:00 → 31 Dec 12:00), `Throw`.
+   Defaults: `GapPolicy.ShiftForward`, `OverlapPolicy.Earlier`. Optional parameters, no global state.
+5. **`UnzonedDateTime`**: `readonly record struct (DateOnly Date, TimeOnly Time)`. A date and time whose zone was not recorded. No `Now`, no `ToUtc`, no comparison with `DateTimeZone`. Exits: `InZone(zone, gap, overlap)` → `DateTimeZone`, `AssumeUtc()`. Entry from the other side: `DateTimeZone.ToUnzoned()`. Calendar and clock arithmetic without DST.
+6. **No guessing on input.**
+   - `FromDateTimeOffset(dto, zone)` → instant from `dto`, shown in `zone`. `FromDateTimeOffset(dto)` → fixed-offset zone from `Zones.FixedOffset(dto.Offset)` (an offset is not a zone; documented).
+   - `FromDateTime(dt)`: `Kind.Utc` → UTC; `Kind.Local` → `dt.ToUniversalTime()` + `TimeZoneInfo.Local` (keeps the hidden overlap bit, review B6; never wall time + resolver); `Kind.Unspecified` → `DateTimeZoneException` pointing to `UnzonedDateTime.FromDateTime(dt).InZone(...)`.
+   - `Now(TimeProvider? provider = null)` uses `provider.LocalTimeZone` and `provider.GetUtcNow()`.
+7. **Zones.** `Zones.Resolve(string id)`: IANA or Windows ID, canonical ID out (`Europe/Kiev` → `Europe/Kyiv`, `Poland` → `Europe/Warsaw`, `Etc/UTC` → `UTC`) from a link table generated once from tzdb `backward` and committed. `Zones.FixedOffset(TimeSpan)`: cached instances with ID `UTC+02:00` style, so `FromDateTimeOffset` and `Parse` produce equal zones. Clear errors: missing tzdata (chiseled/distroless images, Alpine without `tzdata`) and invariant globalization (Windows IDs, IANA on Windows) name the cause and the fix. No static class with hundreds of zone fields.
+8. **Text: RFC 9557** (`2026-10-18T10:00:00+02:00[Europe/Warsaw]`). Writing: canonical ID; a zone without a usable ID (`Local` with ID `Local`, a path) is written as offset only. Reading:
+   | Input | Result |
+   |---|---|
+   | offset + `[zone]`, consistent | `DateTimeZone` in that zone |
+   | offset + `[zone]`, offset wrong for the zone at that instant | throw (default); `Prefer.Offset` / `Prefer.Zone` option |
+   | `Z[zone]` | instant in UTC, shown in `zone` |
+   | `Z` or offset, no brackets | fixed-offset zone (`Z` → `UTC`) |
+   | no offset, `[zone]` | wall time resolved in `zone` (decision 4) |
+   | neither | `UnzonedDateTime` |
+   | `[!zone]` | same as `[zone]` |
+   | other annotations (`[u-ca=…]`) | ignored; critical (`[!u-ca=…]`) → throw |
+   | more than 7 fractional digits | truncated to ticks |
+   | `23:59:60` | throw |
+9. **Serialization.** `System.Text.Json` converters for both types in the main package, registered with `[JsonConverter]` on the types, including `ReadAsPropertyName`/`WriteAsPropertyName` (dictionary keys). Newtonsoft converters and the Avro mapping live in an AvroConvert-side package after 2.0, not here.
+10. **Names.** Package and type stay `SolTechnology.DateTimeZone` / `DateTimeZone`. Namespace stays `SolTechnology.Time`: a namespace equal to the type name does not compile for callers under `SolTechnology.*` (`CS0118`, checked). NodaTime also has a `DateTimeZone` (a zone, not an instant): README shows `using NodaDateTimeZone = NodaTime.DateTimeZone;` for projects with both.
+11. **Targets `net8.0;net10.0`**, `Nullable`, `TreatWarningsAsErrors`. No PublicApiAnalyzers until 2.0 stable.
 
-Out of scope for 2.0: non-ISO calendars, `Period`/`Duration`, bundled tzdb, Roslyn analyzer (candidate for 2.1: warn on `DateTime.Now` and `Kind.Unspecified` in serialized types).
+Known limits, documented rather than fixed: offsets before 1972 can differ from tzdb by seconds (.NET truncates to whole minutes, e.g. Africa/Monrovia 1970: −00:44 vs −00:44:30), and pre-1970 data depends on the tzdata build (Europe/Amsterdam 1900 is +00:00 after tzdb merged it into Brussels). Results for old dates can differ between Windows and Linux.
+
+Out of scope for 2.0: non-ISO calendars, `Period`/`Duration`, bundled tzdb, Roslyn analyzer, NodaTime converters.
 
 ## Steps
 
-### 0. Transfer the repository to the organisation (first, so CI and the package point at the right place)
-- [ ] GitHub: `AdrianStrugala/SolTechnology.DateTimeZone` → Settings → General → **Transfer ownership** → `Sol-Technology`. GitHub keeps a redirect from the old address.
-- [x] Locally: `git remote set-url origin https://github.com/Sol-Technology/SolTechnology.DateTimeZone.git`.
-- [ ] Publishing: no API key. nuget.org **Trusted Publishing** as in AvroConvert (`publish.yml` on `v*` tags, environment `nuget`, repo variable `NUGET_USER`); policy owner `Sol-Technology`, repository `SolTechnology.DateTimeZone`, workflow `publish.yml`. Set up together with the new CI in step 1. Secrets do not survive a transfer, so the old `NUGET_API_KEY` is gone anyway.
-- [x] `RepositoryUrl`, `PackageProjectUrl`, README badges to the new address.
-- [ ] NuGet: add a co-owner if the organisation has its own account; otherwise the owner stays `AdrianStrugala` (as for AvroConvert).
+### 0. Transfer the repository to the organisation – done 26 Oct 2026
+- [x] Transferred to `Sol-Technology/SolTechnology.DateTimeZone`; remote, `RepositoryUrl`, `PackageProjectUrl`, README badge updated.
+- [ ] Publishing: nuget.org **Trusted Publishing** as in AvroConvert (`publish.yml` on `v*` tags, environment `nuget`, repo variable `NUGET_USER`); policy owner `Sol-Technology`, repository `SolTechnology.DateTimeZone`, workflow `publish.yml`. Done with the CI in step 1.
 
 ### 1. Project housekeeping
-- [ ] Rename directory and project: `src/SolTechnology.Time` → `src/SolTechnology.DateTimeZone`, `.sln` → `SolTechnology.DateTimeZone.sln`, tests likewise. `AssemblyName`, `PackageId` = `SolTechnology.DateTimeZone`; code namespace stays `SolTechnology.Time` (premortem #1: a namespace equal to the type name breaks every caller under `SolTechnology.*`).
-- [ ] `TargetFrameworks` `net8.0;net10.0`; `Version` 2.0.0-preview.1; `PackageLicenseExpression` MIT; `PackageReadmeFile`; `Deterministic`, `ContinuousIntegrationBuild`, SourceLink; `GenerateDocumentationFile`.
-- [ ] Remove `todo.cs`, `TestTest.cs`, `.github/runTests.ps1` (run tests with `dotnet test`).
-- [ ] CI: `actions/checkout@v4`, `setup-dotnet@v4` with `global.json`; build + test on PR; pack + push on `v*` tags, not on every push to `main` (today every merge publishes).
-- [ ] Tests: xunit 2.9 / FluentAssertions 7 (or Shouldly; FA 8 is commercial), current `coverlet`.
+- [ ] Project and solution stay `SolTechnology.Time` (namespace), `PackageId`/`AssemblyName` stay `SolTechnology.DateTimeZone`. Solution file → `.slnx` or keep.
+- [ ] `TargetFrameworks` `net8.0;net10.0`; `Version` 2.0.0-preview.1; MIT; `PackageReadmeFile`; `Deterministic`, `ContinuousIntegrationBuild`, SourceLink; `GenerateDocumentationFile`.
+- [ ] Remove `todo.cs`, `TestTest.cs`, `.github/runTests.ps1`.
+- [ ] Tests: NUnit + AwesomeAssertions (same as AvroConvert).
+- [ ] CI `build.yml`: build + test on PR and `main`, matrix `ubuntu-latest`, `windows-latest`, `macos-latest`; one job with `InvariantGlobalization=true`; one job in `mcr.microsoft.com/dotnet/sdk:10.0` with tzdata removed (expects the clear error, not a crash). `publish.yml`: pack + push on `v*` tags only.
 
-### 2. Core: the instant is the truth
-- [ ] `DateTimeZone`: fields `UtcTicks`, `Zone`; derived `Date`, `Time`, `Offset`, `UtcDateTime`, `ToDateTimeOffset()`.
-- [ ] Constructors: `DateTimeZone(DateOnly, TimeOnly, TimeZoneInfo, GapPolicy = ShiftForward, OverlapPolicy = Earlier)` (wall time → instant), `DateTimeZone.FromUtcTicks(long, TimeZoneInfo)`, `FromDateTime` (Utc/Local only), `FromDateTimeOffset`.
-- [ ] Remove `DateTimeZone(DateTime)` without a zone and `DateTimeZone(DateOnly, TimeOnly)` (implicit UTC); use `UnzonedDateTime(...).AssumeUtc()` instead.
-- [ ] Equality, `GetHashCode`, `IComparable<DateTimeZone>`, operators by `UtcTicks`; `SameRepresentation`.
-- [ ] `ToUtc()`, `ToTimeZone(TimeZoneInfo)`, `ToTimeZone(string ianaId)`: change `Zone` only.
-- [ ] `Now` via `TimeProvider` (`DateTimeZone.Now(TimeProvider? provider = null)`) so it is testable without the system clock.
+### 2. Core
+- [ ] `DateTimeZone` struct (decision 1), constructors: `(DateOnly, TimeOnly, TimeZoneInfo, GapPolicy, OverlapPolicy)`, `FromDateTimeOffset(dto[, zone])`, `FromDateTime`, `FromUtc(DateTime utc, TimeZoneInfo)`, `Now(TimeProvider?)`. Range check: wall time must stay within `DateTime` range (no silent clamping, review B1).
+- [ ] Equality, `GetHashCode`, `IComparable<DateTimeZone>`, operators by instant; `SameRepresentation`; `DateTimeZoneComparer.Representation`.
+- [ ] `ToTimeZone(TimeZoneInfo)`, `ToTimeZone(string)`, `ToUtc()`: same instant, other zone.
+- [ ] Remove `Add(TimeOnly)`/`Add(DateOnly)` (their arguments are not quantities); `AtTime(TimeOnly)` replaces the first.
 
-### 3. Arithmetic
-- [ ] Instant-based: `Add(TimeSpan)`, `AddHours/Minutes/Seconds/Milliseconds/Ticks`, `+`/`-` with `TimeSpan`, `-` between two `DateTimeZone` → `TimeSpan`.
-- [ ] Calendar-based: `AddDays/AddMonths/AddYears` = `ToUnzoned().Add…().InZone(Zone, gap, overlap)`.
-- [ ] Remove `Add(TimeOnly)` and `Add(DateOnly)`: their arguments are not quantities (`Add(09:00)` reads as "set to 9:00" but adds 9 h; `Add(DateOnly)` adds year+month+day of the date, and "add zero" cannot be expressed). Replacement for the first: `AtTime(TimeOnly)` (same date, different time); for the second none, `AddDays/Months/Years` suffice.
+### 3. `ZoneResolver` and arithmetic
+- [ ] `ZoneResolver.Resolve` (decision 4), `GapPolicy`, `OverlapPolicy`.
+- [ ] Instant and calendar arithmetic (decision 3).
 
-### 4. `UnzonedDateTime`
-- [ ] `readonly record struct UnzonedDateTime(DateOnly Date, TimeOnly Time)`, `IComparable<UnzonedDateTime>` (comparing wall clocks with each other is fine).
-- [ ] `InZone(...)`, `AssumeUtc()`, `FromDateTime(DateTime)` (any `Kind`, drops the zone explicitly), `ToDateTime()` → `Kind.Unspecified`.
-- [ ] Calendar and clock arithmetic without DST (no zone, so no gaps).
+### 4. `UnzonedDateTime` (decision 5)
 
-### 5. Zones
-- [ ] `Zones`: generator (`tools/GenerateZones`) reading IANA IDs from `TimeZoneInfo.GetSystemTimeZones()` on Linux plus CLDR `windowsZones.xml` for the mapping; output as static `TimeZoneInfo` fields resolved lazily.
-- [ ] `Zones.Resolve(string id)`: IANA or Windows, with a readable error.
-- [ ] Remove `ZoneSelector`.
+### 5. Zones (decision 7)
+- [ ] `tools/GenerateZoneLinks`: reads tzdb `backward`, writes `ZoneLinks.g.cs`; committed, re-run when tzdb changes.
+- [ ] `Zones.Resolve`, `Zones.FixedOffset`, `Zones.Utc`. Remove `ZoneSelector`.
 
-### 6. Text
-- [ ] `ToString()` RFC 9557; `TryParse`/`Parse` for both types; `IParsable<T>`/`IFormattable`/`ISpanFormattable`.
-- [ ] `System.Text.Json` converters (`JsonConverter<DateTimeZone>`, `JsonConverter<UnzonedDateTime>`) registered by attribute on the types, so they work without configuration.
+### 6. Text (decision 8)
+- [ ] `ToString()`, `Parse`/`TryParse` for both types; `IParsable<T>`, `IFormattable`, `ISpanFormattable`. `ToString(format)` formats `_value` (the `DateTimeOffset`).
+- [ ] STJ converters (decision 9), test with a source-generated `JsonSerializerContext`.
 
-### 7. Tests that must pass (and would fail today)
-- [ ] Warsaw 2026-03-29 02:30 (gap): `ShiftForward` → 03:30+02:00, `Throw` throws.
-- [ ] Warsaw 2026-10-25 02:30 (overlap): `Earlier` → +02:00, `Later` → +01:00.
-- [ ] `AddHours(24)` vs `AddDays(1)` across both nights: different instants, both documented in the test.
-- [ ] `new(10:00, Warsaw) == new(08:00, UTC)`; a `HashSet` treats them as one.
-- [ ] Round-trip `ToString()`/`Parse` for IANA zone, fixed offset, UTC; `Parse("2026-10-18T10:00")` returns `UnzonedDateTime`.
-- [ ] `FromDateTime(Kind.Unspecified)` throws with the hint.
-- [ ] Same suite on Windows and Linux in CI (matrix), because zone resolution differs.
-- [ ] NodaTime as an oracle in a separate test project: 1000 random instants × 20 zones, compare offset and wall clock.
+### 7. Tests that must pass
+- [ ] Gap: Warsaw 2026-03-29 02:30 → `ShiftForward` 03:30+02:00, `Throw` throws. Antarctica/Troll 2026-03-29 01:30 (2-hour gap). **Pacific/Apia 2011-12-30 12:00** (skipped day) → 2011-12-31 12:00+14:00.
+- [ ] Overlap: Warsaw 2026-10-25 02:30 → `Earlier` +02:00, `Later` +01:00. Australia/Lord_Howe (30-minute DST). America/Santiago (southern hemisphere).
+- [ ] `AddHours(24)` vs `AddDays(1)` across both Warsaw nights: different instants. `AddMonths` from 31 Jan.
+- [ ] Equality: `new(10:00, Warsaw) == new(08:00, UTC)`, one element in a `HashSet`; `SameRepresentation` false; `Etc/UTC` and `UTC` are the same representation; `Europe/Kiev` and `Europe/Kyiv` too.
+- [ ] `FromDateTime(Kind.Local)` for both 02:30s of the overlap (via `ToLocalTime()`), each keeps its instant. `Kind.Unspecified` throws with the hint.
+- [ ] Round-trip `ToString()`/`Parse` for IANA zone, fixed offset, UTC, and every row of the table in decision 8.
+- [ ] `default(DateTimeZone)` members do not throw.
+- [ ] Range: 9999-12-31 in Pacific/Kiritimati throws instead of clamping.
+- [ ] Missing tzdata and invariant globalization: clear error messages (CI jobs from step 1).
+- [ ] NodaTime as an oracle (separate, non-blocking test project): random instants 1972–2025 × zones without rule changes in the last 5 years; compare offset and wall clock.
 
 ### 8. Release
-- [ ] `2.0.0-preview.1` on NuGet with a README describing the two types and the rule "no zone = `UnzonedDateTime`, never implicit UTC".
-- [ ] Mark 1.0.1 as deprecated on NuGet with a link to 2.0 ("API rewrite; 1.x has DST bugs").
-- [ ] AvroConvert 4.x: optional dependency, S7 mapping; Lake: native dependency.
+- [ ] `2.0.0-preview.1` with a README: the two types, the rule "no zone = `UnzonedDateTime`", the format limit (instant-only formats drop the zone), the NodaTime alias.
+- [ ] Deprecate 1.0.1 on NuGet with a link to 2.0 ("API rewrite; 1.x has DST bugs").
+- [ ] AvroConvert 4.x / Lake: mapping package (`timestamp-*` ↔ `DateTimeZone` in UTC, `local-timestamp-*` ↔ `UnzonedDateTime`), separate plan.
 
-Estimate: steps 0–1 one evening; 2–4 two to three evenings; 5–7 two evenings; 8 half a day. Independent of AvroConvert 4.0 until S7.
+Estimate: step 1 one evening; 2–4 three evenings (`ZoneResolver` with its tests is the biggest part); 5–7 two to three evenings; 8 half a day. Timebox: preview.1 by end of January 2027, otherwise stop and cut scope.
 
-## Premortem (26 Oct 2026)
+---
+
+The two appendices below are the analysis of the first draft. Their findings are already in the decisions and steps above; they stay as the reason for those decisions.
+
+## Appendix A: premortem (26 Oct 2026)
 
 Assume it is September 2027 and 2.0 failed: few or no users, AvroConvert does not use it, the evenings went elsewhere. The likely reasons, most likely first. "Checked" means verified on 26 Oct 2026, not assumed.
 
@@ -130,7 +153,7 @@ Lake does not pass its go/no-go in Q1 2027. AvroConvert never takes the dependen
 - Lake no-go and no AvroConvert issue about zones by the time preview.1 is ready → ship preview.1 as is, no further work.
 - More than 8 evenings spent before preview.1 → stop, cut scope to `UnzonedDateTime` + instant-based core.
 
-## Design review: what will break in the new code (26 Oct 2026)
+## Appendix B: design review of the first draft (26 Oct 2026)
 
 "Checked" = run on .NET 10.0.100, macOS, system tzdata, 26 Oct 2026. Windows was not checked; every Windows point below is a test to add to the CI matrix, not a finding.
 
