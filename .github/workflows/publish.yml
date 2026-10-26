@@ -1,0 +1,61 @@
+name: Publish
+
+# Push a tag like v2.0.0-preview.1 or v2.0.0 to publish SolTechnology.DateTimeZone to nuget.org.
+# The tag must match <Version> in the csproj. A tag with a hyphen is a prerelease.
+#
+# nuget.org uses Trusted Publishing (OIDC, no stored API key). One-time setup on nuget.org → your profile → Trusted Publishing:
+#   Repository Owner: Sol-Technology, Repository: SolTechnology.DateTimeZone, Workflow File: publish.yml, Environment: nuget
+# The nuget.org profile name is read from the repository variable NUGET_USER (Settings → Secrets and variables → Actions → Variables).
+
+on:
+  push:
+    tags: [ "v*" ]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: write   # GitHub release
+      id-token: write   # OIDC token for nuget.org
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          8.0.x
+          10.0.x
+
+    - name: Check tag matches the package version
+      run: |
+        version="${GITHUB_REF_NAME#v}"
+        grep -q "<Version>$version</Version>" src/SolTechnology.Time/SolTechnology.Time.csproj || { echo "::error::csproj does not have <Version>$version</Version>"; exit 1; }
+
+    - name: Build and test
+      run: |
+        dotnet build SolTechnology.Time.sln -c Release
+        dotnet test tests/SolTechnology.Time.UnitTests -c Release --no-build
+
+    - name: Pack
+      run: dotnet pack src/SolTechnology.Time/SolTechnology.Time.csproj --no-build -c Release -o artifacts
+
+    - name: NuGet login (OIDC → temporary API key)
+      uses: NuGet/login@v1
+      id: login
+      with:
+        user: ${{ vars.NUGET_USER }}
+
+    - name: Push to nuget.org
+      run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+    - name: GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        notes="docs/release-notes/${GITHUB_REF_NAME}.md"
+        args=("$GITHUB_REF_NAME" artifacts/*.nupkg --title "SolTechnology.DateTimeZone ${GITHUB_REF_NAME#v}")
+        [[ "$GITHUB_REF_NAME" == *-* ]] && args+=(--prerelease)
+        if [[ -f "$notes" ]]; then args+=(--notes-file "$notes"); else args+=(--generate-notes); fi
+        gh release create "${args[@]}"

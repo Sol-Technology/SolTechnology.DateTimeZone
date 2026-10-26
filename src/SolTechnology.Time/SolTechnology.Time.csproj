@@ -1,29 +1,41 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<Nullable>enable</Nullable>
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<RootNamespace>SolTechnology.Time</RootNamespace>
+		<AssemblyName>SolTechnology.DateTimeZone</AssemblyName>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<IsAotCompatible>true</IsAotCompatible>
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Authors>Adrian Strugala</Authors>
-		<Version>1.0.1</Version>
-		<Description>SolTechnology DateTimeZone library</Description>
-		<PackageTags>sol technology core date time zone dateTime timezone conversion</PackageTags>
-		<Product>SolTechnology.DateTimeZone</Product>
 		<PackageId>SolTechnology.DateTimeZone</PackageId>
-		<AssemblyName>SolTechnology.DateTimeZone</AssemblyName>
+		<Version>2.0.0-preview.1</Version>
+		<Authors>Adrian Strugala</Authors>
+		<Company>SolTechnology</Company>
+		<Product>SolTechnology.DateTimeZone</Product>
+		<Description>A point in time together with the time zone it is seen in (DateTimeZone), and a date and time without a zone (UnzonedDateTime). Built on DateTimeOffset and TimeZoneInfo; correct across DST changes; RFC 9557 text; System.Text.Json converters.</Description>
+		<PackageTags>datetime timezone time-zone dst iana rfc9557 datetimeoffset timezoneinfo</PackageTags>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageIcon>docs\mini-logo.png</PackageIcon>
 		<RepositoryUrl>https://github.com/Sol-Technology/SolTechnology.DateTimeZone</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageProjectUrl>https://github.com/Sol-Technology/SolTechnology.DateTimeZone</PackageProjectUrl>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
-
-		<PackageIcon>docs\mini-logo.png</PackageIcon>
 	</PropertyGroup>
+
 	<ItemGroup>
 		<None Include="..\..\docs\mini-logo.png" Pack="true" Visible="false" PackagePath="docs\mini-logo.png" />
+		<None Include="..\..\README.md" Pack="true" Visible="false" PackagePath="\" />
+		<None Include="..\..\LICENSE" Pack="true" Visible="false" PackagePath="\" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<InternalsVisibleTo Include="SolTechnology.Time.UnitTests" />
+	</ItemGroup>
 
 </Project>
