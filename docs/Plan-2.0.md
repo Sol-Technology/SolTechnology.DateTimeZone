@@ -52,7 +52,7 @@ Out of scope for 2.0: non-ISO calendars, `Period`/`Duration`, bundled tzdb, Rosl
 - [ ] NuGet: add a co-owner if the organisation has its own account; otherwise the owner stays `AdrianStrugala` (as for AvroConvert).
 
 ### 1. Project housekeeping
-- [ ] Rename directory and project: `src/SolTechnology.Time` → `src/SolTechnology.DateTimeZone`, `.sln` → `SolTechnology.DateTimeZone.sln`, tests likewise. `AssemblyName`, `RootNamespace`, `PackageId` = `SolTechnology.DateTimeZone`; code namespace `SolTechnology.DateTimeZone`.
+- [ ] Rename directory and project: `src/SolTechnology.Time` → `src/SolTechnology.DateTimeZone`, `.sln` → `SolTechnology.DateTimeZone.sln`, tests likewise. `AssemblyName`, `PackageId` = `SolTechnology.DateTimeZone`; code namespace stays `SolTechnology.Time` (premortem #1: a namespace equal to the type name breaks every caller under `SolTechnology.*`).
 - [ ] `TargetFrameworks` `net8.0;net10.0`; `Version` 2.0.0-preview.1; `PackageLicenseExpression` MIT; `PackageReadmeFile`; `Deterministic`, `ContinuousIntegrationBuild`, SourceLink; `GenerateDocumentationFile`.
 - [ ] Remove `todo.cs`, `TestTest.cs`, `.github/runTests.ps1` (run tests with `dotnet test`).
 - [ ] CI: `actions/checkout@v4`, `setup-dotnet@v4` with `global.json`; build + test on PR; pack + push on `v*` tags, not on every push to `main` (today every merge publishes).
@@ -101,3 +101,31 @@ Out of scope for 2.0: non-ISO calendars, `Period`/`Duration`, bundled tzdb, Rosl
 - [ ] AvroConvert 4.x: optional dependency, S7 mapping; Lake: native dependency.
 
 Estimate: steps 0–1 one evening; 2–4 two to three evenings; 5–7 two evenings; 8 half a day. Independent of AvroConvert 4.0 until S7.
+
+## Premortem (26 Oct 2026)
+
+Assume it is September 2027 and 2.0 failed: few or no users, AvroConvert does not use it, the evenings went elsewhere. The likely reasons, most likely first. "Checked" means verified on 26 Oct 2026, not assumed.
+
+### Most likely story
+Lake does not pass its go/no-go in Q1 2027. AvroConvert never takes the dependency because of #100 (fewer dependencies) and because 4.0 already writes `DateTimeOffset` as an instant. 2.0-preview sits on NuGet with a few dozen downloads. The 6–8 evenings came out of November–December, when 4.0 users needed answers.
+
+### Findings
+
+| # | Risk | Evidence | Change to the plan |
+|---|---|---|---|
+| 1 | **Namespace `SolTechnology.DateTimeZone` + type `DateTimeZone` does not compile in SolTechnology code.** Step 1 makes the namespace equal to the type name. | Checked: in `namespace SolTechnology.Avro` with `using SolTechnology.DateTimeZone;`, `DateTimeZone` resolves to the namespace → `CS0118: 'DateTimeZone' is a namespace but is used like a type`. AvroConvert and Lake both live under `SolTechnology.*`. Outside `SolTechnology.*` it compiles. | Keep package id `SolTechnology.DateTimeZone`, keep the namespace `SolTechnology.Time` (as today). Drop the rename of the namespace from step 1. |
+| 2 | **The type name collides with NodaTime, where `DateTimeZone` is a zone, not an instant.** Anyone with both packages gets ambiguous references, and the name means the opposite of what NodaTime users expect. | NodaTime: `DateTimeZone` = zone, `ZonedDateTime` = this concept. | Decide the type name before writing code; 2.0 is the only cheap moment. Options: keep it and document, or e.g. `ZonedTime`. Not `ZonedDateTime` (same clash). |
+| 3 | **The problem it solves is not visible in AvroConvert issues.** Purpose says "dates shifted by an hour are a recurring topic". | Checked: 94 issues in total, ~5 about dates (#21 nullable DateTime, #69 BigQuery logical type, #108 rounding, #153 millis vs micros, #118 ADX). None about zones or DST. 4.0 already fixed the `DateTimeOffset` instant. | Remove the claim. The success metric "fewer date-related issues" cannot move from a baseline of ~0. Real driver is Lake (Iceberg `timestamp` vs `timestamptz`, Parquet `isAdjustedToUTC`). Start 2.0 **after** the Lake go/no-go, or limit it to what Lake needs. |
+| 4 | **"Optional dependency" of AvroConvert does not exist in NuGet.** Either AvroConvert depends on it (against #100, one more package for every 4.x user) or there is an adapter package. | — | Decide now: adapter `SolTechnology.Avro.Time` (or similar), AvroConvert core stays without it. |
+| 5 | **No tz database = every IANA zone throws.** Chiseled and distroless .NET images ship without tzdata (only the `-extra` variants have it), Alpine needs `apk add tzdata`. | Checked: with the tz database hidden (`TZDIR=/nonexistent`), `FindSystemTimeZoneById("Europe/Warsaw")` → `TimeZoneNotFoundException`, `Local.Id` → `UTC`. | Error message that names the cause and the fix (install tzdata / use an `-extra` image). CI job in a chiseled image. README section. |
+| 6 | **Zone IDs are not canonical, so RFC 9557 output and equality of zones differ between machines.** | Checked: on macOS `TimeZoneInfo.Local.Id` = `Poland` (a tzdb link), not `Europe/Warsaw`. Linux containers give `UTC` or `Etc/UTC`; .NET can also report `Local`. | Canonicalize through the tzdb `backward` link list (small generated table), never write `[Local]`; test `ToString()` of `Local` on all three OSes. |
+| 7 | **NodaTime oracle tests will be flaky.** NodaTime bundles its own tzdb version, runners use the OS tzdata/ICU; zones changed recently (Mexico 2022, Greenland 2023, Kazakhstan 2024, Paraguay 2024) disagree between versions. Windows has fewer historical rules. | — | Oracle only for zones without changes in the last 5 years and dates 2000–2025, or load the same tzdb version into NodaTime. Mark the oracle project as non-blocking. |
+| 8 | **RFC 9557 edge cases are not decided.** Offset inconsistent with the zone (`…T10:00+01:00[Europe/Warsaw]` in July), critical flag `[!Europe/Warsaw]`, `[u-ca=…]` annotations, historical sub-minute offsets (Warsaw LMT +01:24 before 1915, while `DateTimeOffset` offsets are whole minutes). | — | Table in step 6: inconsistent offset → throw by default; `!` accepted; unknown annotations ignored unless critical; pre-1900 sub-minute offsets rounded or rejected, documented. |
+| 9 | **`default` value.** If `DateTimeZone` is a struct, `default(DateTimeZone).Zone` is `null`. | Checked: `default(...)` of a struct with a `TimeZoneInfo` field has `Zone == null`. | Decide class vs struct in step 2. If struct: treat `null` as UTC, or throw a clear error from every member. |
+| 10 | **AvroConvert JSON goes through Newtonsoft, the plan only has System.Text.Json converters.** `Avro2Json` of a model with these types would serialize the `TimeZoneInfo` object. | AvroConvert 4.0 keeps Newtonsoft in the public API (V4ReleasePlan). | Newtonsoft converter in the adapter package from point 4, or keep these types out of the Avro JSON paths. |
+| 11 | **Scope creep for a ~100-download package.** Zones generator from CLDR, PublicApiAnalyzers, OS matrix, oracle project. | — | Cut for preview.1: `Zones.Resolve(string)` + a handful of constants, no generator; analyzers after 2.0. Timebox: if preview.1 is not out by end of January 2027, stop and reassess. |
+| 12 | **Tooling different from the rest of the family.** Plan says xunit + FluentAssertions 7 and an API-key push; AvroConvert uses NUnit + AwesomeAssertions and Trusted Publishing. | — | Same stack as AvroConvert: NUnit, AwesomeAssertions, `publish.yml` with Trusted Publishing (step 0 already says so). |
+
+### Kill criteria
+- Lake no-go and no AvroConvert issue about zones by the time preview.1 is ready → ship preview.1 as is, no further work.
+- More than 8 evenings spent before preview.1 → stop, cut scope to `UnzonedDateTime` + instant-based core.
