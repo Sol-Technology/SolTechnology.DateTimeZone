@@ -124,7 +124,7 @@ Out of scope for 2.0: non-ISO calendars, `Period`/`Duration`, bundled tzdb, Rosl
 - [x] NodaTime as an oracle (separate, non-blocking test project): every transition 1972-2025 in 22 zones without rule changes in the last 5 years, ±3 h around it in 15-minute steps; compare the instant. NodaTime bundles its own tzdb and the runners use the OS one, so recently changed zones (Mexico 2022, Greenland 2023, Kazakhstan 2024, Paraguay 2024) are not in the list.
 
 ### 8. Release
-- [ ] `2.0.0-preview.1` (tag `v2.0.0-preview.1`; README and `docs/release-notes/v2.0.0-preview.1.md` are written).
+- [ ] `2.0.0` straight away, without a preview (decision 27 Oct 2026): tag `v2.0.0`, notes in `docs/release-notes/v2.0.0.md`. Package icon on a white background, like the GitHub and Polar avatars.
 - [ ] Deprecate 1.0.1 on NuGet with a link to 2.0 ("API rewrite; 1.x has DST bugs").
 - [ ] AvroConvert 4.x / Lake: mapping package (`timestamp-*` ↔ `DateTimeZone` in UTC, `local-timestamp-*` ↔ `UnzonedDateTime`), separate plan. A NuGet package cannot have an optional dependency, so it is an adapter (`SolTechnology.Avro.Time` or similar), AvroConvert core stays without it (#100 asks for fewer dependencies). The adapter's round-trip test should assert `SameRepresentation` is **false** after writing to an instant-only format, so the loss of the zone is explicit. The mapping that adds real value is `local-timestamp-*` / Iceberg `timestamp` / Parquet `isAdjustedToUTC=false` ↔ `UnzonedDateTime`: today those come back as `DateTime` `Kind.Unspecified` and the user guesses.
 

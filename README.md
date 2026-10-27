@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
- <a href="https://www.nuget.org/packages/SolTechnology.DateTimeZone"><img src="https://img.shields.io/nuget/vpre/SolTechnology.DateTimeZone?label=NuGet&logo=nuget&color=blue"></a>
+ <a href="https://www.nuget.org/packages/SolTechnology.DateTimeZone"><img src="https://img.shields.io/nuget/v/SolTechnology.DateTimeZone?label=NuGet&logo=nuget&color=blue"></a>
  <a href="https://github.com/Sol-Technology/SolTechnology.DateTimeZone/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Sol-Technology/SolTechnology.DateTimeZone/build.yml?label=Build&logo=github"></a>
  <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-MIT-2F7D7A.svg"></a>
 </p>

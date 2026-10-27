@@ -1,7 +1,7 @@
 # SolTechnology.DateTimeZone documentation
 
 ```
-dotnet add package SolTechnology.DateTimeZone --prerelease
+dotnet add package SolTechnology.DateTimeZone
 ```
 
 Namespace: `SolTechnology.Time`. Targets: net8.0 and net10.0. No dependencies.
