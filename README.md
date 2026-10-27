@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  A point in time, together with the time zone it is seen in
+  A point in time, surviving clock changes
 </p>
 
 <p align="center">
